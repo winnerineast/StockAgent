@@ -135,11 +135,20 @@ export const DeductionRetroStudioTab: React.FC<DeductionRetroStudioTabProps> = (
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left 2 Cols: Per-Stock 4 Unified Core Elements */}
         <div className="lg:col-span-2 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-base font-bold text-white flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-cyan-400" />
-              <span>单股票【知识图谱 + 新闻 + 持仓 + 走势复盘】全景卡片</span>
-            </h3>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-cyan-400" />
+                <span>单股票【知识图谱 + 新闻 + 持仓 + 走势复盘】全景卡片</span>
+              </h3>
+              {loading && (
+                <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 text-xs font-semibold animate-pulse flex items-center gap-1">
+                  <RefreshCw className="w-3 h-3 animate-spin text-cyan-400" />
+                  Context 融合推理中...
+                </span>
+              )}
+            </div>
+
             <button
               onClick={onOpenPipelineModal}
               className="text-xs text-cyan-400 hover:underline flex items-center gap-1 font-semibold"
@@ -159,8 +168,17 @@ export const DeductionRetroStudioTab: React.FC<DeductionRetroStudioTabProps> = (
                 />
               ))
             ) : (
-              <div className="glass-card p-8 border-slate-800 text-center text-slate-400">
-                正在加载实盘持仓与知识图谱复盘数据...
+              <div className="space-y-4">
+                {[1, 2].map((i) => (
+                  <div key={i} className="glass-card p-6 border-slate-800 space-y-3 animate-pulse">
+                    <div className="flex items-center justify-between">
+                      <div className="h-6 bg-slate-800 rounded w-1/4"></div>
+                      <div className="h-6 bg-slate-800 rounded w-1/3"></div>
+                    </div>
+                    <div className="h-4 bg-slate-900 rounded w-3/4"></div>
+                    <div className="h-16 bg-slate-950 rounded w-full border border-slate-800"></div>
+                  </div>
+                ))}
               </div>
             )}
           </div>

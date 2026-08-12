@@ -60,15 +60,15 @@ export const OllamaDeductionModal: React.FC<OllamaDeductionModalProps> = ({
   const getActiveText = () => {
     switch (activeTab) {
       case "prompt":
-        return activeData.promptContextText;
+        return activeData.promptContextText || "// 正在组装完整 Prompt 上下文 Payload...";
       case "kg":
-        return activeData.knowledgeGraphContext;
+        return activeData.knowledgeGraphContext || "// 暂无单股票知识图谱 Context 节点数据";
       case "news":
-        return activeData.searxngNewsContext;
+        return activeData.searxngNewsContext || "// 暂无 SearXNG 盘前新闻资讯数据";
       case "positions":
-        return activeData.positionsContext;
+        return activeData.positionsContext || "// 暂无实盘持仓与预算数据";
       case "output":
-        return activeData.rawOllamaOutput || "暂无原始生成输出";
+        return activeData.rawOllamaOutput || "// 暂无原始生成输出结果";
       default:
         return "";
     }

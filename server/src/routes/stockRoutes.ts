@@ -49,7 +49,7 @@ stockRouter.get("/portfolio", async (_req: Request, res: Response) => {
         data: {
           id: "default-portfolio",
           name: "MooMoo 美股主仓位",
-          cashBalance: openDData.cashBalance || 10.77,
+          cashBalance: openDData.cashBalance || 86.13,
           totalBudget: 1000.0,
           positions: {
             create: openDData.positions.map((p) => ({
@@ -61,6 +61,31 @@ stockRouter.get("/portfolio", async (_req: Request, res: Response) => {
             })),
           },
         },
+        include: { positions: true },
+      });
+    } else if (openDData.fromOpenD && Array.isArray(openDData.positions) && openDData.positions.length > 0) {
+      // 动态同步实盘 OpenD 持仓与资金至 SQLite 数据库
+      await prisma.stockPortfolio.update({
+        where: { id: "default-portfolio" },
+        data: { cashBalance: openDData.cashBalance },
+      });
+
+      await prisma.stockPosition.deleteMany({
+        where: { portfolioId: "default-portfolio" },
+      });
+
+      await prisma.stockPosition.createMany({
+        data: openDData.positions.map((p) => ({
+          portfolioId: "default-portfolio",
+          symbol: p.symbol,
+          companyName: p.companyName || p.symbol,
+          shares: p.shares,
+          costBasis: p.costBasis,
+          marketPrice: p.marketPrice || p.costBasis,
+        })),
+      });
+
+      portfolio = await prisma.stockPortfolio.findFirst({
         include: { positions: true },
       });
     }

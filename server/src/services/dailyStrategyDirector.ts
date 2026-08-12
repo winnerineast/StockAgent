@@ -89,6 +89,32 @@ export class DailyStrategyDirector {
         },
         include: { positions: true },
       });
+    } else if (openDPortfolio.fromOpenD && openDPositions.length > 0) {
+      // 同步最新 OpenD 实盘持仓与现金余额至数据库
+      await prisma.stockPortfolio.update({
+        where: { id: portfolioId },
+        data: { cashBalance: openDCash },
+      });
+
+      await prisma.stockPosition.deleteMany({
+        where: { portfolioId },
+      });
+
+      await prisma.stockPosition.createMany({
+        data: openDPositions.map((p) => ({
+          portfolioId,
+          symbol: p.symbol,
+          companyName: p.companyName || p.symbol,
+          shares: p.shares,
+          costBasis: p.costBasis,
+          marketPrice: p.marketPrice || p.costBasis,
+        })),
+      });
+
+      portfolio = await prisma.stockPortfolio.findUnique({
+        where: { id: portfolioId },
+        include: { positions: true },
+      });
     }
 
     // STEP 3: 调度 SearXNG 抓取市场新闻催化剂 (NEWS_SEARCH)
@@ -135,7 +161,7 @@ export class DailyStrategyDirector {
       } catch (e) {}
     }
 
-    for (const sym of allSymbols.slice(0, 8)) {
+    for (const sym of allSymbols) {
       let kgItem = await stockKnowledgeGraphStoreService.getKnowledgeGraph(portfolioId, sym);
       if (!kgItem) {
         kgItem = stockKnowledgeGraphStoreService.buildDefaultKnowledgeGraph(sym);
@@ -199,13 +225,25 @@ export class DailyStrategyDirector {
       marketOverview: string;
     };
 
+    const promptPayload = ollamaService.buildPromptPayload({
+      positions: currentPositions,
+      watchlist: watchlistItems,
+      quotesMap,
+      searxngNewsText: intelResult.rawNewsText,
+      knowledgeGraphs: knowledgeGraphList,
+      lessonsLearned: retroPnL.lessonsLearned,
+      totalBudget: budgetToUse,
+      cashBalance: portfolio.cashBalance,
+      riskPreference: portfolio.riskPreference,
+    });
+
     let deductionPipeline = {
       modelUsed: ollamaModel || "Ollama / RuleEngine",
-      promptContextText: "",
-      knowledgeGraphContext: "",
-      searxngNewsContext: intelResult.rawNewsText,
-      positionsContext: "",
-      lessonsContext: retroPnL.lessonsLearned.join("\n"),
+      promptContextText: promptPayload.promptText,
+      knowledgeGraphContext: promptPayload.kgContextText,
+      searxngNewsContext: promptPayload.searxngNewsText,
+      positionsContext: promptPayload.positionsText,
+      lessonsContext: promptPayload.lessonsText,
       rawOllamaOutput: "",
     };
 
@@ -245,6 +283,8 @@ export class DailyStrategyDirector {
           budgetToUse,
           portfolio.riskPreference
         );
+        deductionPipeline.modelUsed = `量化规则引擎 (RuleEngine Fallback: ${err.message})`;
+        deductionPipeline.rawOllamaOutput = JSON.stringify(screenerRes, null, 2);
       }
     } else {
       screenerRes = stockEngine.generateStockScreenerRecommendations(
@@ -255,6 +295,8 @@ export class DailyStrategyDirector {
         budgetToUse,
         portfolio.riskPreference
       );
+      deductionPipeline.modelUsed = "量化规则引擎 (Ollama未连通/无模型)";
+      deductionPipeline.rawOllamaOutput = JSON.stringify(screenerRes, null, 2);
     }
 
     // 将推演出的 Action 绑回 perStockDeductionRetroList

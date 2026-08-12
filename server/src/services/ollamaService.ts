@@ -197,27 +197,23 @@ export class OllamaService {
     };
   }
 
-  public async generateStrategyWithOllama(
-    modelName: string,
-    context: {
-      positions: StockPositionItem[];
-      watchlist: Array<{ symbol: string; companyName: string }>;
-      quotesMap: Map<string, number>;
-      searxngNewsText: string;
-      knowledgeGraphs: StockKnowledgeGraphItem[];
-      lessonsLearned: string[];
-      totalBudget: number;
-      cashBalance: number;
-      riskPreference: string;
-    }
-  ): Promise<OllamaDeductionResult> {
-    const status = await this.getStatus();
-    if (!status.connected || status.models.length === 0) {
-      throw new Error("Ollama 服务未连接或未安装任何 LLM 模型");
-    }
-
-    const selectedModel = status.models.includes(modelName) ? modelName : status.recommendedModel || status.models[0];
-
+  public buildPromptPayload(context: {
+    positions: StockPositionItem[];
+    watchlist: Array<{ symbol: string; companyName: string }>;
+    quotesMap: Map<string, number>;
+    searxngNewsText: string;
+    knowledgeGraphs: StockKnowledgeGraphItem[];
+    lessonsLearned: string[];
+    totalBudget: number;
+    cashBalance: number;
+    riskPreference: string;
+  }): {
+    promptText: string;
+    kgContextText: string;
+    positionsText: string;
+    lessonsText: string;
+    searxngNewsText: string;
+  } {
     const kgContextText = context.knowledgeGraphs
       .map((kg) => {
         const nodesText = kg.nodes.map((n) => `  - [${n.type}] ${n.name}: ${n.description || ""}`).join("\n");
@@ -236,7 +232,7 @@ export class OllamaService {
 
     const lessonsText = context.lessonsLearned.map((l, i) => `${i + 1}. ${l}`).join("\n");
 
-    const prompt = `你是一位专业的美股量化交易主控专家。请结合以下【硬件调优模型】、【实时大盘新闻】、【实盘持仓】、【每只股票的操盘知识图谱】及【历史风控教训】，为今日美股开盘制定精确定量的加减仓操盘指南。
+    const promptText = `你是一位专业的美股量化交易主控专家。请结合以下【硬件调优模型】、【实时大盘新闻】、【实盘持仓】、【每只股票的操盘知识图谱】及【历史风控教训】，为今日美股开盘制定精确定量的加减仓操盘指南。
 
 ========================================
 一、盘前 SearXNG 实时新闻与大盘资讯
@@ -291,6 +287,38 @@ ${lessonsText}
     }
   ]
 }`;
+
+    return {
+      promptText,
+      kgContextText,
+      positionsText,
+      lessonsText,
+      searxngNewsText: context.searxngNewsText,
+    };
+  }
+
+  public async generateStrategyWithOllama(
+    modelName: string,
+    context: {
+      positions: StockPositionItem[];
+      watchlist: Array<{ symbol: string; companyName: string }>;
+      quotesMap: Map<string, number>;
+      searxngNewsText: string;
+      knowledgeGraphs: StockKnowledgeGraphItem[];
+      lessonsLearned: string[];
+      totalBudget: number;
+      cashBalance: number;
+      riskPreference: string;
+    }
+  ): Promise<OllamaDeductionResult> {
+    const status = await this.getStatus();
+    if (!status.connected || status.models.length === 0) {
+      throw new Error("Ollama 服务未连接或未安装任何 LLM 模型");
+    }
+
+    const selectedModel = status.models.includes(modelName) ? modelName : status.recommendedModel || status.models[0];
+    const payload = this.buildPromptPayload(context);
+    const prompt = payload.promptText;
 
     try {
       const resp = await fetch(`${this.baseUrl}/api/chat`, {
