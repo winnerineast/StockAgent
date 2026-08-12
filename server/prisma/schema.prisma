@@ -1,0 +1,113 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model StockPortfolio {
+  id            String          @id @default("default-portfolio")
+  name          String          @default("MooMoo 美股主仓位")
+  cashBalance   Float           @default(0.0)
+  totalBudget   Float           @default(1000.0)
+  riskPreference String         @default("BALANCED")
+  updatedAt     DateTime        @updatedAt
+  createdAt     DateTime        @default(now())
+
+  positions     StockPosition[]
+  snapshots     PortfolioSnapshot[]
+  strategies    DailyStrategy[]
+  retrospectives StrategyRetrospective[]
+  knowledgeGraphs StockKnowledgeGraphStore[]
+}
+
+model StockPosition {
+  id            String         @id @default(uuid())
+  portfolioId   String
+  symbol        String
+  companyName   String?
+  shares        Float          @default(0)
+  costBasis     Float          @default(0)
+  marketPrice   Float          @default(0)
+  notes         String?
+  updatedAt     DateTime       @updatedAt
+
+  portfolio     StockPortfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+
+  @@unique([portfolioId, symbol])
+}
+
+model PortfolioSnapshot {
+  id               String         @id @default(uuid())
+  portfolioId      String
+  snapshotDate     String         // YYYY-MM-DD
+  totalMarketValue Float
+  totalCostBasis   Float
+  cashBalance      Float
+  totalPnL         Float
+  totalPnLPct      Float
+  positionsJson    String         // JSON representation of holding positions
+  createdAt        DateTime       @default(now())
+
+  portfolio        StockPortfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+}
+
+model DailyStrategy {
+  id                 String         @id @default(uuid())
+  portfolioId        String
+  strategyDate       String         // YYYY-MM-DD
+  marketOverview     String
+  existingGuidance   String?
+  newGuidance        String?
+  actionsJson        String         // JSON list of ActionItems (BUY, SELL, TRIM, HOLD)
+  riskAlertsJson     String         // JSON list of RiskAlerts
+  retroPnLScore      Float?         // Evaluated accuracy score (0-100)
+  createdAt          DateTime       @default(now())
+
+  portfolio          StockPortfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  retrospectives     StrategyRetrospective[]
+}
+
+model StrategyRetrospective {
+  id                 String         @id @default(uuid())
+  portfolioId        String
+  strategyId         String?
+  retroDate          String         // YYYY-MM-DD
+  accuracyScore      Float          @default(85.0)
+  executionMatchRate Float          @default(90.0)
+  avoidedLoss        Float          @default(0.0)
+  totalRealizedPnL   Float          @default(0.0)
+  summaryText        String
+  lessonsLearnedJson String         // JSON array of distilled trading disciplines / lessons
+  createdAt          DateTime       @default(now())
+
+  portfolio          StockPortfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  strategy           DailyStrategy? @relation(fields: [strategyId], references: [id], onDelete: SetNull)
+}
+
+model StockKnowledgeGraphStore {
+  id                String         @id @default(uuid())
+  portfolioId       String
+  symbol            String         // Stock symbol (e.g. AAPL, NVDA)
+  nodesJson         String         // JSON array of KnowledgeGraphEntityNode
+  edgesJson         String         // JSON array of KnowledgeGraphRelationEdge
+  newsCatalystsJson String         // JSON array of news catalyst strings
+  guidanceText      String?
+  updatedAt         DateTime       @updatedAt
+
+  portfolio         StockPortfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+
+  @@unique([portfolioId, symbol])
+}
+
+model StockMarketIntelCache {
+  id        String   @id @default(uuid())
+  intelDate String
+  symbol    String?
+  title     String
+  summary   String
+  source    String
+  createdAt DateTime @default(now())
+}

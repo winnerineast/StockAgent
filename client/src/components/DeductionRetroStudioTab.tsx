@@ -1,0 +1,261 @@
+import React, { useState } from "react";
+import {
+  DollarSign,
+  PieChart,
+  TrendingUp,
+  Sliders,
+  RefreshCw,
+  History,
+  Sparkles,
+  Bot,
+  Award,
+  BookOpen,
+  ShieldCheck,
+} from "lucide-react";
+import { DeductionProgressStepper, StageStep } from "./DeductionProgressStepper";
+import { PerStockDeductionRetroCard } from "./PerStockDeductionRetroCard";
+
+interface DeductionRetroStudioTabProps {
+  netAssets: number;
+  cashBalance: number;
+  totalMarketValue: number;
+  totalPnL: number;
+  totalPnLPct: number;
+  positions: any[];
+  rebalanceActions: any[];
+  perStockItems: any[];
+  retrospectives: any[];
+  isUnlocked: boolean;
+  loading: boolean;
+  currentStage: StageStep | null;
+  onOpenKnowledgeGraph: (symbol: string) => void;
+  onOpenUnlockModal: () => void;
+  onExecuteRebalance: (budget: number, risk: string) => void;
+  onOpenPipelineModal: () => void;
+}
+
+export const DeductionRetroStudioTab: React.FC<DeductionRetroStudioTabProps> = ({
+  netAssets,
+  cashBalance,
+  totalMarketValue,
+  totalPnL,
+  totalPnLPct,
+  positions,
+  rebalanceActions,
+  perStockItems,
+  retrospectives,
+  isUnlocked,
+  loading,
+  currentStage,
+  onOpenKnowledgeGraph,
+  onOpenUnlockModal,
+  onExecuteRebalance,
+  onOpenPipelineModal,
+}) => {
+  const [customBudget, setCustomBudget] = useState<number>(1000);
+  const [riskPreference, setRiskPreference] = useState<string>("BALANCED");
+
+  const latestRetro = retrospectives[0] || {
+    accuracyScore: 88,
+    executionMatchRate: 92,
+    avoidedLoss: 450,
+    lessonsLearned: ["严格遵守盘前知识图谱止损防线", "单标的集中度勿超 30%"],
+  };
+
+  const lessons: string[] = typeof latestRetro.lessonsLearnedJson === "string"
+    ? JSON.parse(latestRetro.lessonsLearnedJson)
+    : (latestRetro.lessonsLearned || []);
+
+  const isPnLPos = totalPnL >= 0;
+
+  return (
+    <div className="space-y-6">
+      {/* Live Stepper Indicator (Visually showing process status) */}
+      <DeductionProgressStepper
+        currentStage={currentStage}
+        loading={loading}
+        onOpenPipelineModal={onOpenPipelineModal}
+      />
+
+      {/* Asset KPIs & Historical Retro Summary Banner */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Net Assets */}
+        <div className="glass-card p-5 border-slate-800 flex flex-col justify-between">
+          <div className="flex items-center justify-between text-slate-400 text-xs">
+            <span>总资产 Net Assets</span>
+            <DollarSign className="w-4 h-4 text-cyan-400" />
+          </div>
+          <div className="mt-2 text-2xl font-bold text-white tracking-tight">${netAssets.toFixed(2)}</div>
+          <div className="mt-1 text-xs text-slate-400 flex items-center gap-1">
+            <span>现金占比:</span>
+            <span className="text-cyan-400 font-semibold">{((cashBalance / (netAssets || 1)) * 100).toFixed(1)}%</span>
+          </div>
+        </div>
+
+        {/* Retrospective Accuracy */}
+        <div className="glass-card p-5 border-slate-800 flex flex-col justify-between bg-indigo-950/20">
+          <div className="flex items-center justify-between text-slate-400 text-xs">
+            <span>前次推演预测准确率</span>
+            <Award className="w-4 h-4 text-indigo-400" />
+          </div>
+          <div className="mt-2 text-2xl font-bold text-indigo-300 tracking-tight">
+            {latestRetro.accuracyScore || 88}%
+          </div>
+          <div className="mt-1 text-xs text-slate-400">规避回调损失: <strong className="text-emerald-400">${latestRetro.avoidedLoss || 450}</strong></div>
+        </div>
+
+        {/* Floating P&L */}
+        <div className="glass-card p-5 border-slate-800 flex flex-col justify-between">
+          <div className="flex items-center justify-between text-slate-400 text-xs">
+            <span>持仓浮动盈亏 P&L</span>
+            <TrendingUp className={`w-4 h-4 ${isPnLPos ? "text-emerald-400" : "text-rose-400"}`} />
+          </div>
+          <div className={`mt-2 text-2xl font-bold tracking-tight ${isPnLPos ? "text-emerald-400" : "text-rose-400"}`}>
+            {isPnLPos ? "+" : ""}${totalPnL.toFixed(2)}
+          </div>
+          <div className={`mt-1 text-xs font-semibold ${isPnLPos ? "text-emerald-400" : "text-rose-400"}`}>
+            {isPnLPos ? "+" : ""}{totalPnLPct.toFixed(2)}%
+          </div>
+        </div>
+
+        {/* Portfolio Risk & Budget KPI Card (Replaces duplicate unlock card) */}
+        <div className="glass-card p-5 border-slate-800 flex flex-col justify-between">
+          <div className="flex items-center justify-between text-slate-400 text-xs">
+            <span>调仓风控预算 Budget</span>
+            <ShieldCheck className="w-4 h-4 text-cyan-400" />
+          </div>
+          <div className="mt-2 text-2xl font-bold text-white tracking-tight">${customBudget}</div>
+          <div className="mt-1 text-xs text-slate-400">
+            风控偏好: <span className="text-cyan-300 font-semibold">{riskPreference === "BALANCED" ? "平衡型" : riskPreference === "CONSERVATIVE" ? "保守型" : "激进型"}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Studio Grid: Left 2 Cols (Per-stock 4-item cards) + Right 1 Col (Position Sizer & Retro Discipline) */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left 2 Cols: Per-Stock 4 Unified Core Elements */}
+        <div className="lg:col-span-2 space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-bold text-white flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-cyan-400" />
+              <span>单股票【知识图谱 + 新闻 + 持仓 + 走势复盘】全景卡片</span>
+            </h3>
+            <button
+              onClick={onOpenPipelineModal}
+              className="text-xs text-cyan-400 hover:underline flex items-center gap-1 font-semibold"
+            >
+              <Bot className="w-3.5 h-3.5" />
+              <span>推演 Payload 上下文检视 ↗</span>
+            </button>
+          </div>
+
+          <div className="space-y-4">
+            {perStockItems.length > 0 ? (
+              perStockItems.map((item, idx) => (
+                <PerStockDeductionRetroCard
+                  key={idx}
+                  item={item}
+                  onOpenKnowledgeGraph={onOpenKnowledgeGraph}
+                />
+              ))
+            ) : (
+              <div className="glass-card p-8 border-slate-800 text-center text-slate-400">
+                正在加载实盘持仓与知识图谱复盘数据...
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right Col: 仓位加减控制器 & 蒸馏风控教训 */}
+        <div className="space-y-6">
+          {/* Position Sizer Calculator */}
+          <div className="glass-card p-6 border-slate-800 space-y-5">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-semibold text-white flex items-center gap-2">
+                <Sliders className="w-5 h-5 text-cyan-400" />
+                <span>仓位加减控制器 (Sizer)</span>
+              </h3>
+            </div>
+
+            {/* Budget Slider */}
+            <div className="space-y-2 bg-slate-950/60 p-4 rounded-xl border border-slate-800">
+              <div className="flex items-center justify-between text-xs text-slate-300">
+                <span>调仓预算 (Budget)</span>
+                <span className="font-bold text-cyan-400 text-sm">${customBudget}</span>
+              </div>
+              <input
+                type="range"
+                min="100"
+                max="5000"
+                step="100"
+                value={customBudget}
+                onChange={(e) => setCustomBudget(Number(e.target.value))}
+                className="w-full accent-cyan-400 cursor-pointer"
+              />
+            </div>
+
+            {/* Risk Preference Toggle */}
+            <div className="space-y-2">
+              <span className="text-xs text-slate-400 block">风险偏好 (Risk Tolerance)</span>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { key: "CONSERVATIVE", label: "保守" },
+                  { key: "BALANCED", label: "平衡" },
+                  { key: "AGGRESSIVE", label: "激进" },
+                ].map((item) => (
+                  <button
+                    key={item.key}
+                    onClick={() => setRiskPreference(item.key)}
+                    className={`py-2 rounded-xl text-xs font-semibold border transition-all ${
+                      riskPreference === item.key
+                        ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/50"
+                        : "bg-slate-900 text-slate-400 border-slate-800 hover:text-white"
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Execute Deduction Button */}
+            <button
+              onClick={() => onExecuteRebalance(customBudget, riskPreference)}
+              disabled={loading}
+              className="w-full py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs shadow-lg shadow-cyan-500/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              {loading ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin text-slate-950" />
+                  <span>⚡ 正在调用 Ollama 大模型推演...</span>
+                </>
+              ) : (
+                <span>重新推演开盘加减仓参数</span>
+              )}
+            </button>
+          </div>
+
+          {/* Distilled Trading Lessons Repository */}
+          <div className="glass-card p-6 border-slate-800 space-y-4">
+            <h3 className="text-base font-semibold text-white flex items-center gap-2">
+              <BookOpen className="w-5 h-5 text-indigo-400" />
+              <span>历史推演复盘教训库 (Discipline)</span>
+            </h3>
+            <div className="space-y-2">
+              {lessons.length > 0 ? (
+                lessons.map((lesson, idx) => (
+                  <div key={idx} className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-300 flex items-start gap-2">
+                    <span className="text-cyan-400 font-bold">{idx + 1}.</span>
+                    <span>{lesson}</span>
+                  </div>
+                ))
+              ) : (
+                <div className="text-slate-500 text-xs italic">暂无历史风控教训</div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
