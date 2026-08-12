@@ -118,7 +118,7 @@ export class DailyStrategyDirector {
     }
 
     // STEP 3: 调度 SearXNG 抓取市场新闻催化剂 (NEWS_SEARCH)
-    notifyStage(3, "NEWS_SEARCH", "SearXNG 容器检索个股新闻催化剂", "正在通过 Docker SearXNG 抓取盘前资讯...", 50);
+    notifyStage(3, "NEWS_SEARCH", "SearXNG 容器检索个股新闻催化剂", "正在通过 Docker SearXNG 极速检索全网盘前资讯催化剂...", 50);
     const allSymbols = Array.from(
       new Set([
         ...portfolio.positions.map((p) => p.symbol),
@@ -126,7 +126,24 @@ export class DailyStrategyDirector {
       ])
     );
 
-    const intelResult = await searxngSearchService.fetchAndCacheMarketNews(allSymbols);
+    let intelResult = await searxngSearchService.fetchAndCacheMarketNews(allSymbols);
+
+    // 严格阻塞守护：SearXNG 必须成功完成网络新闻搜索并返回有效条目，方可向下推进 Step 4 与 Step 5
+    let searxngRetryCount = 0;
+    while ((!intelResult.searxngConnected || intelResult.newsItemsCount === 0) && searxngRetryCount < 6) {
+      searxngRetryCount++;
+      console.log(`[DailyStrategyDirector] 等待 SearXNG 检索最新全网新闻 (第 ${searxngRetryCount}/6 次重试)...`);
+      notifyStage(
+        3,
+        "NEWS_SEARCH",
+        "SearXNG 容器检索个股新闻催化剂",
+        `SearXNG 正在拉起网络引擎并抓取最新盘前新闻 (第 ${searxngRetryCount}/6 次尝试)...`,
+        50
+      );
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      intelResult = await searxngSearchService.fetchAndCacheMarketNews(allSymbols);
+    }
+
     const realQuotes = await moomooAdapter.fetchMarketQuotes(allSymbols);
     const quotesMap = new Map<string, number>();
     realQuotes.forEach((q) => quotesMap.set(q.symbol.toUpperCase(), q.price));

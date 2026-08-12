@@ -59,15 +59,23 @@ export class SearXNGSearchService {
       return [];
     }
 
-    try {
+    const doQuery = async () => {
       const searchUrl = `${this.baseUrl}/search?q=${encodeURIComponent(query)}&format=json&categories=news,general`;
       const resp = await fetch(searchUrl);
       if (!resp.ok) {
         throw new Error(`SearXNG HTTP ${resp.status}`);
       }
-
       const data: any = await resp.json();
-      const results: any[] = Array.isArray(data?.results) ? data.results : [];
+      return Array.isArray(data?.results) ? data.results : [];
+    };
+
+    try {
+      let results = await doQuery();
+      // 若刚唤醒容器搜索引擎尚在加载，重试一次
+      if (results.length === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        results = await doQuery();
+      }
 
       return results.slice(0, maxResults).map((r) => ({
         title: r.title || "",
@@ -111,7 +119,7 @@ export class SearXNGSearchService {
         execSync("wsl -d Ubuntu -u root docker start searxng", { stdio: "ignore", timeout: 8000 });
       } catch (wslErr) {}
 
-      for (let attempt = 1; attempt <= 8; attempt++) {
+      for (let attempt = 1; attempt <= 10; attempt++) {
         await new Promise((resolve) => setTimeout(resolve, 1000));
         status = await this.getStatus(false);
         if (status.connected) {
@@ -143,7 +151,7 @@ export class SearXNGSearchService {
     }
 
     const todayStr = new Date().toISOString().split("T")[0];
-    const queries = Array.from(new Set(["US market Fed inflation", ...symbols.slice(0, 5)]));
+    const queries = Array.from(new Set(["US market Fed inflation", ...symbols]));
     const allFetchedNews: Array<{ symbol?: string; title: string; summary: string }> = [];
 
     for (const q of queries) {
