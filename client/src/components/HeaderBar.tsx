@@ -71,16 +71,28 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
         {/* Status Badges & Action Controls */}
         <div className="flex flex-wrap items-center gap-3">
           {/* MooMoo OpenD Status */}
-          <div
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border ${
+          <button
+            onClick={onRefresh}
+            title="点击检测 MooMoo OpenD 连通状态 (127.0.0.1:11111)"
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-medium border cursor-pointer transition-all hover:scale-105 ${
               openDConnected
-                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
-                : "bg-amber-500/10 text-amber-400 border-amber-500/30"
+                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20"
+                : "bg-amber-500/10 text-amber-400 border-amber-500/30 hover:bg-amber-500/20"
             }`}
           >
+            <div className="relative flex h-2 w-2">
+              {openDConnected ? (
+                <>
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </>
+              ) : (
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+              )}
+            </div>
             <Activity className="w-3.5 h-3.5" />
             <span>{openDConnected ? "MooMoo OpenD 已连通" : "OpenD 离线 (11111)"}</span>
-          </div>
+          </button>
 
           {/* SearXNG Status */}
           <div
@@ -129,18 +141,45 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
             </button>
           )}
 
-          {/* Unlock Trade Button (Disabled & Shows "已解锁" when isUnlocked === true) */}
+          {/* Unlock Trade Button (Dynamic status awareness) */}
           <button
             onClick={isUnlocked ? undefined : onOpenUnlockModal}
-            disabled={isUnlocked}
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
-              isUnlocked
-                ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 opacity-80 cursor-not-allowed"
-                : "bg-amber-600/20 text-amber-300 border border-amber-500/40 hover:bg-amber-600/30 cursor-pointer"
+            disabled={isUnlocked || !openDConnected}
+            title={
+              !openDConnected
+                ? "MooMoo OpenD 处于离线状态，连接后方可解锁交易"
+                : isUnlocked
+                ? "MooMoo 交易权限已解锁，可进行订单操作"
+                : "点击输入 6 位交易密码解锁 MooMoo 交易权限"
+            }
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+              !openDConnected
+                ? "bg-slate-900 text-slate-500 border border-slate-800 cursor-not-allowed opacity-70"
+                : isUnlocked
+                ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 opacity-90 cursor-default"
+                : "bg-amber-600/20 text-amber-300 border border-amber-500/40 hover:bg-amber-600/30 hover:scale-105 cursor-pointer shadow-lg shadow-amber-500/10"
             }`}
           >
-            {isUnlocked ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> : <Lock className="w-3.5 h-3.5" />}
-            <span>{isUnlocked ? "已解锁" : "解锁交易密码"}</span>
+            {isUnlocked ? (
+              <>
+                <div className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </div>
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                <span>交易功能已解锁</span>
+              </>
+            ) : !openDConnected ? (
+              <>
+                <Lock className="w-3.5 h-3.5 text-slate-500" />
+                <span>未解锁 (需连接 OpenD)</span>
+              </>
+            ) : (
+              <>
+                <Lock className="w-3.5 h-3.5 text-amber-400" />
+                <span>解锁 MooMoo 交易</span>
+              </>
+            )}
           </button>
 
           {/* Refresh Button */}

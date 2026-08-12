@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { HeaderBar } from "./components/HeaderBar";
 import { StockScreenerTab } from "./components/StockScreenerTab";
 import { DeductionRetroStudioTab } from "./components/DeductionRetroStudioTab";
@@ -19,6 +19,7 @@ export default function App() {
   const [ollamaStatus, setOllamaStatus] = useState<any>({ connected: false, models: [], recommendedModel: "", message: "" });
   const [selectedOllamaModel, setSelectedOllamaModel] = useState<string>("");
   const [isUnlocked, setIsUnlocked] = useState<boolean>(false);
+  const prevOpenDConnectedRef = useRef<boolean>(false);
 
   // Data
   const [portfolioData, setPortfolioData] = useState<any>({
@@ -48,7 +49,11 @@ export default function App() {
       const res = await fetch("/api/stock/status");
       const json = await res.json();
       if (json.success) {
-        setOpenDConnected(json.data.openD.connected);
+        const isNowConnected = !!json.data.openD.connected;
+        const newlyConnected = !prevOpenDConnectedRef.current && isNowConnected;
+        prevOpenDConnectedRef.current = isNowConnected;
+
+        setOpenDConnected(isNowConnected);
         setSearxngConnected(json.data.searxng.connected);
         setOllamaStatus(json.data.ollama || { connected: false, models: [], recommendedModel: "" });
         setIsUnlocked(json.data.isUnlocked);
@@ -56,6 +61,13 @@ export default function App() {
         if (json.data.ollama && json.data.ollama.models.length > 0) {
           const recModel = json.data.ollama.recommendedModel || json.data.ollama.models[0];
           setSelectedOllamaModel((prev) => (prev && json.data.ollama.models.includes(prev) ? prev : recModel));
+        }
+
+        // 当 OpenD 从离线变为连通时，自动抓取 OpenD 原生实盘持仓
+        if (newlyConnected) {
+          console.log("[SPA] MooMoo OpenD 已连通，自动拉取最新实盘持仓与自选股...");
+          fetchPortfolio();
+          fetchWatchlist();
         }
       }
     } catch (e) {}
@@ -218,6 +230,7 @@ export default function App() {
       const json = await res.json();
       if (json.success) {
         setIsUnlocked(true);
+        await fetchStatus();
         await fetchPortfolio();
       }
     } catch (e) {}
@@ -233,6 +246,22 @@ export default function App() {
     fetchWatchlist();
     fetchRetrospectives();
     handleGenerateStrategy();
+
+    // 3 秒定时轻量轮询连通状态 (MooMoo OpenD, SearXNG, Ollama)
+    const statusInterval = setInterval(() => {
+      fetchStatus();
+    }, 3000);
+
+    // 页面重新获焦时立即触发检测
+    const handleFocus = () => {
+      fetchStatus();
+    };
+    window.addEventListener("focus", handleFocus);
+
+    return () => {
+      clearInterval(statusInterval);
+      window.removeEventListener("focus", handleFocus);
+    };
   }, []);
 
   return (

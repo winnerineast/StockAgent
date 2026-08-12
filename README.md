@@ -1,83 +1,172 @@
-# StockAgent Studio - 智能选股与推演复盘操盘系统 (SPA)
+# StockAgent Studio - Intelligent Stock Selection, Deduction & Retrospective Trading System (SPA)
 
-> 基于 **MooMoo OpenD 原生 TCP API** + **本地 Docker SearXNG 极速全网搜索** + **硬件自适应 Ollama 本地大模型** 的全栈美股智能选股、推演与复盘操盘系统。
+**English** | [中文文档](README_CN.md)
 
----
-
-## 🌟 核心架构与特色功能
-
-### 1. 【推演与复盘 Studio】单标的全景融合 (Unified Deduction & Retrospective Studio)
-- **单股票 4 大核心推演要素**：将推演与复盘有机融合，为持仓/关注列表中每只股票构建包含四大视角的完整推理链卡片：
-  1. 🧠 **单股票专属操盘知识图谱 (Knowledge Graph)**：实体节点（供应商/竞品/宏观/概念）与关联边，支持互动图谱可视化与自定义节点添加。
-  2. 📰 **SearXNG 盘前新闻催化剂 (Live News)**：从本地 Docker SearXNG 搜索引擎极速检索盘前全网资讯。
-  3. 💼 **MooMoo 实盘持仓与资金 (Positions & Funds)**：股数、成本价、现价、浮动盈亏与仓位占比。
-  4. 🔄 **前次推演与走势复盘 (Past Deduction vs. Actual Price Action Retro)**：对比上一交易日推演建议（目标价/止损线）与实际盘面走势，自动蒸馏风控教训纪律。
-
-### 2. 推演全流程可视化与动态步进器 (Visual Deduction Pipeline Stepper)
-- **6 大阶段实时动态步进器**：
-  - `Step 1`: MooMoo OpenD 抓取实盘持仓与自选股
-  - `Step 2`: SearXNG 本地 Docker 检索美股盘前全网资讯
-  - `Step 3`: 装载单股票操盘知识图谱
-  - `Step 4`: 对齐前次推演目标价/止损线与盘面走势复盘
-  - `Step 5`: ⚡ **Ollama 本地 LLM 大模型全量 Context 融合推理**
-  - `Step 6`: 生成精确定量加减仓指南与风控预警
-- **LLM Context 上下文检视器 (Payload Inspector)**：实时查看输入给 Ollama 的全量 Prompt Payload、知识图谱 Context、SearXNG 资讯与 Ollama 原始 JSON 输出。
-
-### 3. 硬件自适应与 Ollama 模型智能推荐 (Hardware-Aware LLM Selector)
-- **硬件参数自动感知 (Hardware-Aware Badge)**：自动识别本机 GPU 显存 (VRAM)、系统总内存 (RAM) 与 CPU 核心数（如 `💻 63.8GB RAM | NVIDIA GeForce RTX 4090 (24GB VRAM)`）。
-- **智能推荐算力契合模型**：根据硬件容量与金融推理能力综合评分，自动推荐最佳模型（如 **`⭐ [硬件推荐] qwen3.6:27b`** 27B 参数结构化量化模型）。
-- **无缝模型切换**：下拉菜单中保留所有已安装的 Ollama 本地模型，更改模型选择在下一次推演时生效。
-
-### 4. SearXNG 自动自愈与 MooMoo OpenD 原生集成
-- **SearXNG 探针与自动拉起**：检测本地 SearXNG (`http://127.0.0.1:8088`) 状态，若未运行自动以后台 Docker 容器拉起。
-- **MooMoo 交易密码安全解锁**：支持输入动态交易密码（MD5）解锁交易权限，解锁后右上角显示 **`已解锁`** 状态并开启安全禁用防误触。
+> Full-stack US stock intelligence, deduction, and retrospective trading platform powered by **MooMoo OpenD Native TCP API**, **Local Docker SearXNG Fast Web Search**, and **Hardware-Aware Ollama Local LLMs**.
 
 ---
 
-## 🚀 快速开始 (Quick Start)
+## 🌟 Core Architecture & Key Features
 
-### 1. 环境准备
+### 1. Unified Deduction & Retrospective Studio (Single-Stock Panoramic View)
+- **4 Core Elements per Stock**: Combines forward deduction with historical retrospective trading for each stock in portfolio/watchlist:
+  1. 🧠 **Exclusive Stock Knowledge Graph**: Entity nodes (suppliers, competitors, macro trends, sector concepts) and edge relations with interactive visualization and custom node insertion.
+  2. 📰 **SearXNG Pre-Market News Catalysts**: Instant pre-market news aggregation via local Docker SearXNG engine.
+  3. 💼 **MooMoo Real-Time Positions & Funds**: Live share counts, average cost, current price, unrealized PnL, and position weight.
+  4. 🔄 **Past Deduction vs. Actual Price Action Retro**: Compares prior deduction target/stop-loss boundaries against actual price movements to distill disciplined risk management lessons.
+
+### 2. Visual Deduction Pipeline Stepper
+- **6-Stage Real-Time Pipeline**:
+  - `Step 1`: Fetch live portfolio & watchlist via MooMoo OpenD.
+  - `Step 2`: Search pre-market US market news via local SearXNG Docker container.
+  - `Step 3`: Load per-stock trading Knowledge Graph.
+  - `Step 4`: Reconcile past target/stop-loss prices against actual market retro PnL.
+  - `Step 5`: ⚡ **Full Context Fusion Reasoning via Ollama Local LLM**.
+  - `Step 6`: Generate precise quantitative position sizing guidance & risk alerts.
+- **LLM Context Payload Inspector**: Inspect raw prompt payloads, knowledge graph context, SearXNG news feeds, and raw Ollama JSON responses in real time.
+
+### 3. Hardware-Aware LLM Selector
+- **Automatic Hardware Sensing**: Automatically detects GPU VRAM, System RAM, and CPU cores (e.g., `💻 63.8GB RAM | NVIDIA GeForce RTX 4090 (24GB VRAM)`).
+- **Smart Model Recommendation**: Evaluates local hardware capacity and financial reasoning benchmarks to suggest optimal local models (e.g., **`⭐ [Recommended] qwen3.6:27b`** 27B parameter structured quantization model).
+- **Seamless Model Switching**: Choose from all locally pulled Ollama models via dropdown selector, taking effect on the next deduction run.
+
+### 4. SearXNG Self-Healing & MooMoo OpenD Native Integration
+- **SearXNG Health Probe**: Automatically checks local SearXNG (`http://127.0.0.1:8088`) health, self-healing by launching the background Docker container if offline.
+- **MooMoo Trade Unlock**: Supports dynamic MD5 password entry for trading authorization, updating UI status to **`Unlocked`** with safety guards to prevent accidental order execution.
+
+---
+
+## 🚀 Quick Start
+
+### 1. Prerequisites
 - **Node.js**: `v18+`
-- **Docker** (用于 SearXNG 本地搜索容器)
-- **Ollama**: 本地运行 `http://127.0.0.1:11434`
-- **MooMoo OpenD**: 本地运行 `127.0.0.1:11111`
+- **Docker** (For SearXNG local search container)
+- **Ollama**: Running locally at `http://127.0.0.1:11434`
+- **MooMoo OpenD**: Running locally at `127.0.0.1:11111`
 
-### 2. 安装与运行
+### 2. Installation & Running
 
 ```bash
-# 安装根目录及前后端依赖
+# Install root, frontend, and backend dependencies
 npm install
 
-# 初始化 SQLite 数据库 Schema
+# Initialize SQLite database schema
 npm run db:push
 
-# 启动开发服务器 (同时拉起后端 3001 与前端 3000)
+# Start development server (runs backend on 3001 and frontend on 3000 concurrently)
 npm run dev
 ```
 
-打开浏览器访问：`http://localhost:3000`
+Open your browser and navigate to: `http://localhost:3000`
 
 ---
 
-## 🛠️ 项目结构 (Project Structure)
+## 🛠️ Project Structure
 
 ```
 StockAgent/
-├── client/                     # React + Vite + TailwindCSS 极简 UI 前端
+├── client/                     # React + Vite + TailwindCSS SPA frontend
 │   ├── src/
-│   │   ├── components/         # 核心 Studio 视图与 Modal 组件
-│   │   └── App.tsx             # 状态驱动与 Studio 路由
-├── server/                     # Node.js + Express + Prisma 后端
+│   │   ├── components/         # Studio views and modal components
+│   │   └── App.tsx             # State manager and Studio routes
+├── server/                     # Node.js + Express + Prisma backend
 │   ├── src/
-│   │   ├── routes/             # RESTful API 路由
-│   │   └── services/           # MooMoo OpenD, Ollama LLM & SearXNG 服务
-│   └── prisma/                 # SQLite 数据库 Schema
-├── .gitignore                  # Git 排除规则
-└── package.json                # 项目依赖与脚本
+│   │   ├── routes/             # RESTful API endpoints
+│   │   └── services/           # MooMoo OpenD, Ollama LLM & SearXNG services
+│   └── prisma/                 # SQLite database schema
+├── graft/                      # Structured code context graph by Graft (Git Ignored)
+├── .gitignore                  # Git ignore rules
+└── package.json                # Project dependencies and scripts
 ```
 
 ---
 
-## 📄 开源协议 (License)
+## 🗺️ Code Context Graph by Graft
+
+This project utilizes [NanoNets Graft](https://github.com/NanoNets/Graft) to construct a structured code context graph (`graft/`). Powered by tree-sitter AST analysis, Graft indexes **28 files**, **105 core symbols**, and **235 dependency edges**, enabling AI agents and developers to quickly orient themselves within the codebase.
+
+### 1. Full-Stack Architecture Diagram (Mermaid)
+
+```mermaid
+graph TD
+    subgraph Frontend ["Frontend (client/src)"]
+        Main["main.tsx"] --> App["App.tsx (Hub: fetchPortfolio, handleGenerateStrategy)"]
+        App --> HeaderBar["components/HeaderBar.tsx"]
+        App --> Screener["components/StockScreenerTab.tsx"]
+        App --> StudioTab["components/DeductionRetroStudioTab.tsx (Hub)"]
+        App --> PosTab["components/PositionManagerTab.tsx"]
+        App --> RetroTab["components/RetrospectiveTab.tsx"]
+        App --> OllamaModal["components/OllamaDeductionModal.tsx"]
+        App --> KGModal["components/StockKnowledgeGraphModal.tsx"]
+        App --> UnlockModal["components/TradeUnlockModal.tsx"]
+        StudioTab --> Stepper["components/DeductionProgressStepper.tsx"]
+        StudioTab --> RetroCard["components/PerStockDeductionRetroCard.tsx"]
+    end
+
+    subgraph Backend ["Backend (server/src)"]
+        ServerIndex["index.ts"] --> StockRoutes["routes/stockRoutes.ts"]
+        
+        StockRoutes --> StrategyDirector["services/dailyStrategyDirector.ts (Orchestrator)"]
+        StockRoutes --> MooMooAdapter["services/moomooAdapter.ts (Hub: makeOpenDPacket)"]
+        StockRoutes --> OllamaService["services/ollamaService.ts (LLM Engine)"]
+        StockRoutes --> SearXNGService["services/searxngSearchService.ts (Search Engine)"]
+        StockRoutes --> KGStore["services/stockKnowledgeGraphStore.ts (KG Manager)"]
+        StockRoutes --> OpenDaemon["services/openDaemonManager.ts (Daemon Guard)"]
+        
+        StrategyDirector --> MooMooAdapter
+        StrategyDirector --> OllamaService
+        StrategyDirector --> SearXNGService
+        StrategyDirector --> KGStore
+        StrategyDirector --> StockMemory["services/stockMemoryManager.ts (PnL & Retro)"]
+        StrategyDirector --> StockEngine["services/stockEngine.ts"]
+        StrategyDirector --> OpenDaemon
+        
+        MooMooAdapter --> MooMooBridge["services/moomoo_bridge.py (Protobuf API)"]
+        MooMooAdapter --> OpenDaemon
+    end
+
+    subgraph Infrastructure ["Infrastructure & External Services"]
+        Prisma["db/prisma.ts (SQLite DB)"]
+        StockRoutes --> Prisma
+        StrategyDirector --> Prisma
+        MooMooAdapter --> Prisma
+        SearXNGService --> Prisma
+        KGStore --> Prisma
+        StockMemory --> Prisma
+        
+        SearXNGService --> SearXNGDocker["SearXNG (Docker http://127.0.0.1:8088)"]
+        OllamaService --> OllamaLocal["Ollama LLM (http://127.0.0.1:11434)"]
+        MooMooAdapter --> OpenDNative["MooMoo OpenD (127.0.0.1:11111)"]
+    end
+```
+
+### 2. Key Hubs and Hotspots
+
+Identified by Graft topological analysis:
+
+- **Frontend Entrypoint**: `App.tsx` (`fetchPortfolio`, `fetchRetrospectives`, `handleGenerateStrategy`) dispatches state to tabs and modals.
+- **Deduction Orchestration**: `dailyStrategyDirector.ts` (`generateDailyStrategy`) coordinates portfolio fetching, SearXNG search, knowledge graphs, and Ollama context fusion.
+- **Quotes & Trading Adapter**: `moomooAdapter.ts` (`makeOpenDPacket`, `parseOpenDPackets`, `queryRealProtobufPortfolio`) handles MooMoo OpenD native TCP packets and Python bridging.
+- **Hardware & Search Services**: `ollamaService.ts` (hardware detection & model ranking) and `searxngSearchService.ts` (Docker health probing & pre-market news retrieval).
+
+### 3. Common Graft Commands
+
+```bash
+# 1. Rebuild / update the local code context graph (updates graft/ directory)
+npx @nanonets/graft build
+
+# 2. Output token-budgeted repository orientation map and key hubs
+npx @nanonets/graft map
+
+# 3. Serve an interactive visual interface for the context graph
+npx @nanonets/graft viz
+
+# 4. Trace callers and references for a specific symbol
+npx @nanonets/graft callers handleGenerateStrategy
+```
+
+---
+
+## 📄 License
 
 [MIT License](LICENSE)

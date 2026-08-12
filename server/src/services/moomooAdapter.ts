@@ -79,13 +79,14 @@ export class MooMooAdapter {
     try {
       const realData = await this.queryRealProtobufPortfolio();
       if (realData) {
+        this.isTradeUnlocked = true;
         return {
           cashBalance: realData.cashBalance,
           positions: realData.positions,
           fromOpenD: true,
           rawMessage: realData.positions.length > 0
             ? `成功从 MooMoo OpenD 实时拉取到 ${realData.positions.length} 笔真实持仓`
-            : "成功连接 MooMoo OpenD 接口，但账户无持仓或需要交易解锁",
+            : "成功连接 MooMoo OpenD 接口，但账户无持仓",
         };
       }
     } catch (err: any) {
@@ -114,6 +115,7 @@ export class MooMooAdapter {
               if (line.includes('"success":') && line.includes('"positions":')) {
                 const data = JSON.parse(line.trim());
                 if (data.success && Array.isArray(data.positions)) {
+                  this.isTradeUnlocked = true;
                   return resolve({
                     cashBalance: data.detectedCash !== undefined ? data.detectedCash : 10.77,
                     positions: data.positions.map((p: any) => ({
@@ -140,6 +142,17 @@ export class MooMooAdapter {
       this.isTradeUnlocked = false;
       return { unlocked: false };
     }
+
+    // 动态探测：如果当前未标记解锁，主动尝试通过原生 Python 桥接探测 OpenD 交易权限
+    if (!this.isTradeUnlocked) {
+      try {
+        const testRealData = await this.queryRealProtobufPortfolio();
+        if (testRealData) {
+          this.isTradeUnlocked = true;
+        }
+      } catch (e) {}
+    }
+
     return { unlocked: this.isTradeUnlocked };
   }
 
