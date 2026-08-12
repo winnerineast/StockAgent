@@ -88,27 +88,69 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
   return (
     <div className="glass-card border-slate-800 hover:border-cyan-500/30 transition-all overflow-hidden">
       {/* Stock Banner Header */}
-      <div className="p-4 bg-slate-900/80 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
+      <div className="p-4 bg-slate-900/80 border-b border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 font-bold text-white text-base">
             {item.symbol}
           </div>
           <div>
-            <div className="font-bold text-white text-sm">{item.companyName || item.symbol}</div>
-            <div className="text-xs text-slate-400 flex items-center gap-2">
-              <span>现价: ${pos ? pos.marketPrice.toFixed(2) : (rec?.estimatedPrice || 100).toFixed(2)}</span>
-              {pos && (
-                <span className={`font-semibold ${pnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                  {pnl >= 0 ? "+" : ""}${pnl.toFixed(2)} ({pnl >= 0 ? "+" : ""}{pnlPct}%)
+            <div className="font-bold text-white text-sm flex items-center gap-2">
+              <span>{item.companyName || item.symbol}</span>
+              {pos && pos.shares > 0 ? (
+                <span className="px-2 py-0.5 text-[11px] font-semibold rounded-md bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
+                  实盘持仓
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 text-[11px] font-semibold rounded-md bg-slate-800 text-slate-400 border border-slate-700">
+                  观察区标的
                 </span>
               )}
             </div>
+
+            {/* Key Position KPIs (持仓数、买入价、现值、浮盈亏) */}
+            {pos && pos.shares > 0 ? (
+              <div className="flex flex-wrap items-center gap-2.5 text-xs text-slate-300 mt-1.5">
+                <div className="flex items-center gap-1 bg-slate-950 px-2.5 py-1 rounded-lg border border-slate-800">
+                  <span className="text-slate-400">持仓:</span>
+                  <strong className="text-white">{pos.shares} 股</strong>
+                </div>
+                <div className="flex items-center gap-1 bg-slate-950 px-2.5 py-1 rounded-lg border border-slate-800">
+                  <span className="text-slate-400">买入成本:</span>
+                  <strong className="text-white">${pos.costBasis.toFixed(2)}</strong>
+                </div>
+                <div className="flex items-center gap-1 bg-slate-950 px-2.5 py-1 rounded-lg border border-slate-800">
+                  <span className="text-slate-400">当前现价:</span>
+                  <strong className="text-white">${pos.marketPrice.toFixed(2)}</strong>
+                </div>
+                <div className="flex items-center gap-1 bg-slate-950 px-2.5 py-1 rounded-lg border border-slate-800">
+                  <span className="text-slate-400">持仓现值:</span>
+                  <strong className="text-cyan-300 font-bold">${(pos.shares * pos.marketPrice).toFixed(2)}</strong>
+                </div>
+                <div
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg font-bold border ${
+                    pnl >= 0
+                      ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                      : "bg-rose-500/10 text-rose-400 border-rose-500/30"
+                  }`}
+                >
+                  <span>浮盈亏:</span>
+                  <span>
+                    {pnl >= 0 ? "+" : ""}${pnl.toFixed(2)} ({pnl >= 0 ? "+" : ""}{pnlPct}%)
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="text-xs text-slate-400 flex items-center gap-2 mt-1">
+                <span>现价: ${pos ? pos.marketPrice.toFixed(2) : (rec?.estimatedPrice || 100).toFixed(2)}</span>
+                <span className="text-slate-500 italic">(暂未建立实盘持仓)</span>
+              </div>
+            )}
           </div>
         </div>
 
         {/* Current Recommendation Badge */}
         {rec && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <div
               className={`px-3 py-1 rounded-xl text-xs font-bold flex items-center gap-1.5 ${
                 isBuy
@@ -272,19 +314,23 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
           {subTab === "position" && (
             <div className="space-y-2">
               {pos ? (
-                <div className="grid grid-cols-3 gap-2 bg-slate-950 p-3 rounded-xl border border-slate-800">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 bg-slate-950 p-3 rounded-xl border border-slate-800">
                   <div>
                     <span className="text-slate-400 block text-[11px]">持有数量</span>
                     <span className="font-bold text-white">{pos.shares} 股</span>
                   </div>
                   <div>
-                    <span className="text-slate-400 block text-[11px]">摊薄成本</span>
+                    <span className="text-slate-400 block text-[11px]">买入成本价</span>
                     <span className="font-bold text-white">${pos.costBasis.toFixed(2)}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">持仓现值</span>
+                    <span className="font-bold text-cyan-300">${(pos.shares * pos.marketPrice).toFixed(2)}</span>
                   </div>
                   <div>
                     <span className="text-slate-400 block text-[11px]">浮动盈亏</span>
                     <span className={`font-bold ${pnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                      {pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}
+                      {pnl >= 0 ? "+" : ""}${pnl.toFixed(2)} ({pnl >= 0 ? "+" : ""}{pnlPct}%)
                     </span>
                   </div>
                 </div>
