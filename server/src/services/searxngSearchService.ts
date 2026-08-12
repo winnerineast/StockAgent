@@ -77,7 +77,7 @@ export class SearXNGSearchService {
         results = await doQuery();
       }
 
-      return results.slice(0, maxResults).map((r) => ({
+      return results.slice(0, maxResults).map((r: any) => ({
         title: r.title || "",
         url: r.url || "",
         content: r.content || r.snippet || "",

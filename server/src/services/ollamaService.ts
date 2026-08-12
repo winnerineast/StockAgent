@@ -356,10 +356,10 @@ ${lessonsText}
           marketOverview: jsonParsed.marketOverview || `Ollama (${selectedModel}) 结合知识图谱与新闻推演完成`,
           promptText: prompt,
           rawOllamaResponse: contentText,
-          knowledgeGraphContext: kgContextText,
-          searxngNewsContext: context.searxngNewsText,
-          positionsContext: positionsText,
-          lessonsContext: lessonsText,
+          knowledgeGraphContext: payload.kgContextText,
+          searxngNewsContext: payload.searxngNewsText,
+          positionsContext: payload.positionsText,
+          lessonsContext: payload.lessonsText,
           modelUsed: selectedModel,
         };
       }

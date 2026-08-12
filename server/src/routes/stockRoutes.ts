@@ -90,6 +90,10 @@ stockRouter.get("/portfolio", async (_req: Request, res: Response) => {
       });
     }
 
+    if (!portfolio) {
+      throw new Error("Portfolio not found");
+    }
+
     const positionSymbols = portfolio.positions.map((p) => p.symbol);
     const realQuotes = await moomooAdapter.fetchMarketQuotes(positionSymbols);
     const quotesMap = new Map<string, number>();

@@ -121,6 +121,10 @@ export class DailyStrategyDirector {
       });
     }
 
+    if (!portfolio) {
+      throw new Error("Portfolio not found");
+    }
+
     // STEP 3: 调度 SearXNG 抓取市场新闻催化剂 (NEWS_SEARCH)
     notifyStage(3, "NEWS_SEARCH", "SearXNG 全网资讯", "正在通过 Docker SearXNG 极速检索全网盘前资讯催化剂...", 45);
     const allSymbols = Array.from(
