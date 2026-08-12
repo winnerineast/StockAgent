@@ -139,7 +139,7 @@ export const DeductionRetroStudioTab: React.FC<DeductionRetroStudioTabProps> = (
             <div className="flex items-center gap-2">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
                 <Sparkles className="w-5 h-5 text-cyan-400" />
-                <span>单股票【知识图谱 + 新闻 + 持仓 + 走势复盘】全景卡片</span>
+                <span>实盘持仓股票【知识图谱 + 新闻 + 持仓 + 走势复盘与风控纪律】全景卡片</span>
               </h3>
               {loading && (
                 <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 text-xs font-semibold animate-pulse flex items-center gap-1">
@@ -154,7 +154,7 @@ export const DeductionRetroStudioTab: React.FC<DeductionRetroStudioTabProps> = (
               className="text-xs text-cyan-400 hover:underline flex items-center gap-1 font-semibold"
             >
               <Bot className="w-3.5 h-3.5" />
-              <span>推演 Payload 上下文检视 ↗</span>
+              <span>推演 Context 上下文检视 ↗</span>
             </button>
           </div>
 
@@ -184,21 +184,21 @@ export const DeductionRetroStudioTab: React.FC<DeductionRetroStudioTabProps> = (
           </div>
         </div>
 
-        {/* Right Col: 仓位加减控制器 & 蒸馏风控教训 */}
+        {/* Right Col: 仓位加减控制器 & 实盘持仓调仓决策矩阵 */}
         <div className="space-y-6">
           {/* Position Sizer Calculator */}
           <div className="glass-card p-6 border-slate-800 space-y-5">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-semibold text-white flex items-center gap-2">
                 <Sliders className="w-5 h-5 text-cyan-400" />
-                <span>仓位加减控制器 (Sizer)</span>
+                <span>持仓加减控制总揽 (Sizer)</span>
               </h3>
             </div>
 
             {/* Budget Slider */}
             <div className="space-y-2 bg-slate-950/60 p-4 rounded-xl border border-slate-800">
               <div className="flex items-center justify-between text-xs text-slate-300">
-                <span>调仓预算 (Budget)</span>
+                <span>调仓资金预算 (Budget)</span>
                 <span className="font-bold text-cyan-400 text-sm">${customBudget}</span>
               </div>
               <input
@@ -248,27 +248,64 @@ export const DeductionRetroStudioTab: React.FC<DeductionRetroStudioTabProps> = (
                   <span>⚡ 正在调用 Ollama 大模型推演...</span>
                 </>
               ) : (
-                <span>重新推演开盘加减仓参数</span>
+                <span>重新推演实盘持仓调仓决策</span>
               )}
             </button>
           </div>
 
-          {/* Distilled Trading Lessons Repository */}
+          {/* Real-time Position Rebalance Matrix */}
           <div className="glass-card p-6 border-slate-800 space-y-4">
-            <h3 className="text-base font-semibold text-white flex items-center gap-2">
-              <BookOpen className="w-5 h-5 text-indigo-400" />
-              <span>历史推演复盘教训库 (Discipline)</span>
+            <h3 className="text-base font-semibold text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <BookOpen className="w-5 h-5 text-indigo-400" />
+                <span>实盘持仓调仓决策矩阵</span>
+              </div>
+              <span className="text-xs text-slate-400 font-mono">({perStockItems.length} 标的)</span>
             </h3>
-            <div className="space-y-2">
-              {lessons.length > 0 ? (
-                lessons.map((lesson, idx) => (
-                  <div key={idx} className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-300 flex items-start gap-2">
-                    <span className="text-cyan-400 font-bold">{idx + 1}.</span>
-                    <span>{lesson}</span>
-                  </div>
-                ))
+            <div className="space-y-2.5 max-h-[420px] overflow-y-auto pr-1">
+              {perStockItems.length > 0 ? (
+                perStockItems.map((item, idx) => {
+                  const rec = item.currentRecommendation;
+                  const isBuy = rec?.action === "BUY";
+                  const isTrim = rec?.action === "TRIM" || rec?.action === "SELL";
+                  return (
+                    <div
+                      key={idx}
+                      className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs space-y-1.5 hover:border-slate-700 transition-all"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-white flex items-center gap-1.5">
+                          <span>{item.symbol}</span>
+                          <span className="text-[11px] font-normal text-slate-400 truncate max-w-[90px]">
+                            {item.companyName}
+                          </span>
+                        </span>
+                        {rec ? (
+                          <span
+                            className={`px-2 py-0.5 rounded font-bold text-[11px] ${
+                              isBuy
+                                ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40"
+                                : isTrim
+                                ? "bg-rose-500/20 text-rose-400 border border-rose-500/40"
+                                : "bg-slate-800 text-slate-300 border border-slate-700"
+                            }`}
+                          >
+                            {rec.action} ({rec.suggestedShares}股)
+                          </span>
+                        ) : (
+                          <span className="text-slate-500 text-[11px]">等待推演</span>
+                        )}
+                      </div>
+                      {item.pastRetro?.distilledLesson && (
+                        <p className="text-[11px] text-indigo-300/90 leading-tight border-t border-slate-900 pt-1">
+                          💡 纪律: {item.pastRetro.distilledLesson}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })
               ) : (
-                <div className="text-slate-500 text-xs italic">暂无历史风控教训</div>
+                <div className="text-slate-500 text-xs italic">暂无实盘持仓调仓矩阵</div>
               )}
             </div>
           </div>

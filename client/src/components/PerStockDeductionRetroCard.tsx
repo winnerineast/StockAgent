@@ -175,22 +175,6 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
 
       {/* 4 Core Elements Tab Header */}
       <div className="px-4 py-2 bg-slate-950/60 border-b border-slate-800 flex items-center justify-between">
-        <div className="flex items-center gap-2 overflow-x-auto text-xs">
-          <button
-            onClick={() => setSubTab("retro")}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-semibold transition-all ${
-              subTab === "retro"
-                ? "bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20"
-                : "text-slate-400 hover:text-white bg-slate-900 border border-slate-800"
-            }`}
-          >
-            <History className="w-3.5 h-3.5" />
-            <span>4. 前次推演 vs 盘面复盘</span>
-          </button>
-
-          <button
-            onClick={() => setSubTab("kg")}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-semibold transition-all ${
               subTab === "kg"
                 ? "bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20"
                 : "text-slate-400 hover:text-white bg-slate-900 border border-slate-800"
