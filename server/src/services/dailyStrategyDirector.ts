@@ -9,6 +9,8 @@ import { computeTotalPnL, computeRetroPnL, savePortfolioSnapshot } from "./stock
 import { DailyAllocationOutput, StockPositionItem, StrategyProgressStage, StockDeductionRetroItem } from "../types/stockTypes";
 
 export class DailyStrategyDirector {
+  public currentActiveStage: StrategyProgressStage | null = null;
+
   public async generateDailyStrategy(
     portfolioId: string = "default-portfolio",
     customBudget?: number,
@@ -39,21 +41,23 @@ export class DailyStrategyDirector {
       detail: string,
       progressPercent: number
     ) => {
+      const stg: StrategyProgressStage = {
+        step,
+        totalSteps: 6,
+        stageId,
+        title,
+        detail,
+        progressPercent,
+        timestamp: new Date().toLocaleTimeString("zh-CN", { hour12: false }),
+      };
+      this.currentActiveStage = stg;
       if (onProgress) {
-        onProgress({
-          step,
-          totalSteps: 6,
-          stageId,
-          title,
-          detail,
-          progressPercent,
-          timestamp: new Date().toLocaleTimeString("zh-CN", { hour12: false }),
-        });
+        onProgress(stg);
       }
     };
 
     // STEP 1: 确保 OpenD 通道 (OPEND_CONNECT)
-    notifyStage(1, "OPEND_CONNECT", "连接 MooMoo OpenD 守护进程", "测试 127.0.0.1:11111 TCP 原生通道...", 15);
+    notifyStage(1, "OPEND_CONNECT", "MooMoo OpenD 持仓", "测试 127.0.0.1:11111 TCP 原生通道同步持仓数据...", 15);
     const openDCheck = await openDaemonManager.ensureOpenDRunning();
 
     // STEP 2: 从 OpenD 拉取持仓与自选股 (QUOTES_FETCH)
@@ -118,7 +122,7 @@ export class DailyStrategyDirector {
     }
 
     // STEP 3: 调度 SearXNG 抓取市场新闻催化剂 (NEWS_SEARCH)
-    notifyStage(3, "NEWS_SEARCH", "SearXNG 容器检索个股新闻催化剂", "正在通过 Docker SearXNG 极速检索全网盘前资讯催化剂...", 50);
+    notifyStage(3, "NEWS_SEARCH", "SearXNG 全网资讯", "正在通过 Docker SearXNG 极速检索全网盘前资讯催化剂...", 45);
     const allSymbols = Array.from(
       new Set([
         ...portfolio.positions.map((p) => p.symbol),
@@ -136,9 +140,9 @@ export class DailyStrategyDirector {
       notifyStage(
         3,
         "NEWS_SEARCH",
-        "SearXNG 容器检索个股新闻催化剂",
+        "SearXNG 全网资讯",
         `SearXNG 正在拉起网络引擎并抓取最新盘前新闻 (第 ${searxngRetryCount}/6 次尝试)...`,
-        50
+        45
       );
       await new Promise((resolve) => setTimeout(resolve, 2000));
       intelResult = await searxngSearchService.fetchAndCacheMarketNews(allSymbols);
@@ -158,7 +162,7 @@ export class DailyStrategyDirector {
     }));
 
     // STEP 4: 组装单股票知识图谱 + 历史推演 vs 盘面走势复盘 (CONTEXT_ASSEMBLE)
-    notifyStage(4, "CONTEXT_ASSEMBLE", "合并单股票【知识图谱+新闻+持仓+历史复盘】", "对比上一交易日推演建议与实际走势...", 70);
+    notifyStage(4, "CONTEXT_ASSEMBLE", "单股票知识图谱", "正在同步并组装持仓个股知识图谱与历史复盘...", 65);
     const knowledgeGraphList = [];
     const perStockDeductionRetroList: StockDeductionRetroItem[] = [];
 
@@ -178,7 +182,16 @@ export class DailyStrategyDirector {
       } catch (e) {}
     }
 
+    let symbolIndex = 0;
     for (const sym of allSymbols) {
+      symbolIndex++;
+      notifyStage(
+        4,
+        "CONTEXT_ASSEMBLE",
+        "单股票知识图谱",
+        `正在构建 [${sym}] 操盘知识图谱与盘面复盘 (${symbolIndex}/${allSymbols.length})...`,
+        65 + Math.floor((symbolIndex / allSymbols.length) * 15)
+      );
       let kgItem = await stockKnowledgeGraphStoreService.getKnowledgeGraph(portfolioId, sym);
       if (!kgItem) {
         kgItem = stockKnowledgeGraphStoreService.buildDefaultKnowledgeGraph(sym);

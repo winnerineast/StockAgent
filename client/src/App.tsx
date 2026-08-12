@@ -144,55 +144,25 @@ export default function App() {
     setLoading(true);
     const modelUsed = overrideModel || selectedOllamaModel || ollamaStatus.recommendedModel || "Ollama";
 
-    // 步骤 1: 立即设置 OpenD 连接
+    // 步骤 1: 初始设置 OpenD 连接
     setCurrentStage({
       step: 1,
       stageId: "OPEND_CONNECT",
       title: "MooMoo OpenD 持仓",
-      detail: "测试 127.0.0.1:11111 TCP 原生通道拉取持仓...",
+      detail: "正在连接 127.0.0.1:11111 TCP 原生通道拉取持仓...",
       progressPercent: 15,
     });
 
-    // 动态模拟步进驱动器：在后台 POST 执行期间，实时推展 Step 1 -> 2 -> 3 -> 4 -> 5 (LLM 推理)
-    const timerStep2 = setTimeout(() => {
-      setCurrentStage({
-        step: 2,
-        stageId: "NEWS_SEARCH",
-        title: "SearXNG 全网资讯",
-        detail: "SearXNG 本地 Docker 容器检索美股盘前资讯催化剂...",
-        progressPercent: 35,
-      });
-    }, 600);
-
-    const timerStep3 = setTimeout(() => {
-      setCurrentStage({
-        step: 3,
-        stageId: "CONTEXT_ASSEMBLE",
-        title: "单股票知识图谱",
-        detail: "装载各标的上游供应商、竞品与概念驱动图谱...",
-        progressPercent: 55,
-      });
-    }, 1400);
-
-    const timerStep4 = setTimeout(() => {
-      setCurrentStage({
-        step: 4,
-        stageId: "GUARDRAIL_CALIBRATE",
-        title: "前次推演与走势复盘",
-        detail: "对齐上一交易日推演建议与实际盘面走势...",
-        progressPercent: 75,
-      });
-    }, 2200);
-
-    const timerStep5 = setTimeout(() => {
-      setCurrentStage({
-        step: 5,
-        stageId: "AI_DEDUCTION",
-        title: "Ollama LLM 推理",
-        detail: `⚡ 正在调用 Ollama 大模型 (${modelUsed}) 进行全量 Context 融合推理中...`,
-        progressPercent: 88,
-      });
-    }, 3000);
+    // 开启后台真实执行 Stage 轮询 (400ms 间隔)
+    const stagePollInterval = setInterval(async () => {
+      try {
+        const res = await fetch("/api/stock/strategy/stage");
+        const json = await res.json();
+        if (json.success && json.data) {
+          setCurrentStage(json.data);
+        }
+      } catch (e) {}
+    }, 400);
 
     try {
       const budgetToUse = overrideBudget !== undefined ? overrideBudget : (portfolioData.totalBudget || 1000);
@@ -224,10 +194,7 @@ export default function App() {
     } catch (e) {
       console.warn("Failed to generate strategy:", e);
     } finally {
-      clearTimeout(timerStep2);
-      clearTimeout(timerStep3);
-      clearTimeout(timerStep4);
-      clearTimeout(timerStep5);
+      clearInterval(stagePollInterval);
       setLoading(false);
     }
   };

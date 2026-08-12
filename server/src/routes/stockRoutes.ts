@@ -167,7 +167,15 @@ stockRouter.get("/watchlist", async (_req: Request, res: Response) => {
   return res.json({ success: true, data });
 });
 
-// 5. 调用 Ollama 模型 / 规则引擎生成开盘调仓指南与复盘经验
+// 5. 获取当前后台真实推演阶段
+stockRouter.get("/strategy/stage", (_req: Request, res: Response) => {
+  return res.json({
+    success: true,
+    data: dailyStrategyDirector.currentActiveStage,
+  });
+});
+
+// 5.5 调用 Ollama 模型 / 规则引擎生成开盘调仓指南与复盘经验
 stockRouter.post("/strategy/generate", async (req: Request, res: Response) => {
   const { customBudget, ollamaModel } = req.body;
   try {
