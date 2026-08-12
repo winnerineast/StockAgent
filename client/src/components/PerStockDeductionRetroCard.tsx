@@ -98,7 +98,11 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
               <span>{item.companyName || item.symbol}</span>
               {pos && pos.shares > 0 ? (
                 <span className="px-2 py-0.5 text-[11px] font-semibold rounded-md bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
-                  实盘持仓
+                  实盘持仓 ({pos.shares}股)
+                </span>
+              ) : pos && pos.shares === 0 ? (
+                <span className="px-2 py-0.5 text-[11px] font-semibold rounded-md bg-rose-500/15 text-rose-400 border border-rose-500/30">
+                  🔴 已平仓/减仓至 0 股 (复盘评估中)
                 </span>
               ) : (
                 <span className="px-2 py-0.5 text-[11px] font-semibold rounded-md bg-slate-800 text-slate-400 border border-slate-700">
@@ -137,6 +141,25 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
                   <span>
                     {pnl >= 0 ? "+" : ""}${pnl.toFixed(2)} ({pnl >= 0 ? "+" : ""}{pnlPct}%)
                   </span>
+                </div>
+              </div>
+            ) : pos && pos.shares === 0 ? (
+              <div className="flex flex-wrap items-center gap-2.5 text-xs text-slate-300 mt-1.5">
+                <div className="flex items-center gap-1 bg-slate-950 px-2.5 py-1 rounded-lg border border-rose-900/40 text-rose-300 font-semibold">
+                  <span>持仓状态:</span>
+                  <strong>0 股 (已清仓平仓)</strong>
+                </div>
+                <div className="flex items-center gap-1 bg-slate-950 px-2.5 py-1 rounded-lg border border-slate-800">
+                  <span className="text-slate-400">历史均价/基准:</span>
+                  <strong className="text-white">${pos.costBasis.toFixed(2)}</strong>
+                </div>
+                <div className="flex items-center gap-1 bg-slate-950 px-2.5 py-1 rounded-lg border border-slate-800">
+                  <span className="text-slate-400">当前现价:</span>
+                  <strong className="text-white">${pos.marketPrice.toFixed(2)}</strong>
+                </div>
+                <div className="flex items-center gap-1 bg-slate-950 px-2.5 py-1 rounded-lg border border-slate-800">
+                  <span className="text-slate-400">减仓至0评估:</span>
+                  <strong className="text-indigo-300">观察平仓后避险/收益锁存效果</strong>
                 </div>
               </div>
             ) : (

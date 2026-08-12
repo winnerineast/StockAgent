@@ -182,15 +182,20 @@ export class DailyStrategyDirector {
       } catch (e) {}
     }
 
+    // 核心规则：推演与复盘界面仅针对实盘持仓股票（包含持仓股数>0以及最近减仓/清仓至0股的股票），排除纯观察自选股
+    const targetPortfolioSymbols = Array.from(
+      new Set(portfolio.positions.map((p) => p.symbol.toUpperCase()))
+    );
+
     let symbolIndex = 0;
-    for (const sym of allSymbols) {
+    for (const sym of targetPortfolioSymbols) {
       symbolIndex++;
       notifyStage(
         4,
         "CONTEXT_ASSEMBLE",
         "单股票知识图谱",
-        `正在构建 [${sym}] 操盘知识图谱与盘面复盘 (${symbolIndex}/${allSymbols.length})...`,
-        65 + Math.floor((symbolIndex / allSymbols.length) * 15)
+        `正在构建 [${sym}] 操盘知识图谱与盘面复盘 (${symbolIndex}/${targetPortfolioSymbols.length})...`,
+        65 + Math.floor((symbolIndex / targetPortfolioSymbols.length) * 15)
       );
       let kgItem = await stockKnowledgeGraphStoreService.getKnowledgeGraph(portfolioId, sym);
       if (!kgItem) {
