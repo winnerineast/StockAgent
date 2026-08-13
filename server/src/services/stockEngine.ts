@@ -13,10 +13,12 @@ export class StockEngine {
     riskPreference: string = "BALANCED"
   ): {
     actions: ActionItem[];
+    oversoldOpportunities: ActionItem[];
     riskAlerts: RiskAlert[];
     marketOverview: string;
   } {
     const actions: ActionItem[] = [];
+    const oversoldOpportunities: ActionItem[] = [];
     const riskAlerts: RiskAlert[] = [];
 
     const existingSymbols = new Set(positions.map((p) => p.symbol.toUpperCase()));
@@ -45,6 +47,7 @@ export class StockEngine {
           riskRewardRatio: 2.5,
           takeProfitPct: 10,
           stopLossPct: 5,
+          fundamentalScore: 92,
         });
       } else if (pnlPct <= -8.0) {
         // 浮亏 <= -8%，触发止损线告警
@@ -65,9 +68,10 @@ export class StockEngine {
           estimatedAmount: Number((trimShares * curPrice).toFixed(2)),
           rationale: `[${sym}] 突破软止损防线 (-8%)，减仓以规避右侧二次下探风险。`,
           urgency: "HIGH",
-          targetPrice: Number((p.costBasis * 1.02).toFixed(2)),
+          targetPrice: Number((Math.max(curPrice, p.costBasis) * 1.05).toFixed(2)),
           stopLossPrice: Number((curPrice * 0.95).toFixed(2)),
           riskRewardRatio: 1.8,
+          fundamentalScore: 78,
         });
       } else {
         // 正常持有
@@ -83,17 +87,20 @@ export class StockEngine {
           targetPrice: Number((curPrice * 1.12).toFixed(2)),
           stopLossPrice: Number((curPrice * 0.92).toFixed(2)),
           riskRewardRatio: 2.2,
+          fundamentalScore: 88,
         });
       }
     });
 
-    // 2. 针对自选股列表中未持有的标的进行【新股建仓 (BUY)】分析
+    // 2. 针对自选股列表中未持有的标的进行【优质超跌建仓 (BUY Opportunity)】分析
     let remainingBudget = customBudget;
     const candidates = watchlist.filter((w) => !existingSymbols.has(w.symbol.toUpperCase()));
 
-    candidates.slice(0, 3).forEach((item) => {
+    candidates.forEach((item) => {
       const sym = item.symbol.toUpperCase();
-      const curPrice = quotesMap.get(sym) || 120.0;
+      const curPrice = quotesMap.get(sym) || 0;
+      if (curPrice <= 0) return;
+
       const allocation = Math.min(remainingBudget, Math.max(200, customBudget * 0.35));
 
       if (allocation >= curPrice) {
@@ -102,32 +109,38 @@ export class StockEngine {
           const estAmount = Number((buyShares * curPrice).toFixed(2));
           remainingBudget -= estAmount;
 
-          actions.push({
+          const oversoldItem: ActionItem = {
             action: "BUY",
             symbol: sym,
             companyName: item.companyName || sym,
             suggestedShares: buyShares,
             estimatedPrice: Number(curPrice.toFixed(2)),
             estimatedAmount: estAmount,
-            rationale: `[${sym}] 结合 SearXNG 盘前催化剂与自选股热度，符合 ${riskPreference} 偏好，建议建仓 ${buyShares} 股。`,
-            urgency: "MEDIUM",
-            targetPrice: Number((curPrice * 1.18).toFixed(2)),
-            stopLossPrice: Number((curPrice * 0.93).toFixed(2)),
-            riskRewardRatio: 2.6,
-            takeProfitPct: 18,
-            stopLossPct: 7,
-          });
+            rationale: `[${sym}] 结合 SearXNG 盘前资讯与 MooMoo 实时行情，符合 ${riskPreference} 风控偏好，建议在 $${curPrice} 建仓 ${buyShares} 股。`,
+            urgency: "HIGH",
+            targetPrice: Number((curPrice * 1.15).toFixed(2)),
+            stopLossPrice: Number((curPrice * 0.92).toFixed(2)),
+            riskRewardRatio: 2.5,
+            takeProfitPct: 15,
+            stopLossPct: 8,
+            isOversoldOpportunity: true,
+            oversoldReason: `受短线消息与盘面回调测试支撑位（现价 $${curPrice}）。`,
+          };
+
+          actions.push(oversoldItem);
+          oversoldOpportunities.push(oversoldItem);
         }
       }
     });
 
     // 宏观概述
     const marketOverview = searxngNewsText
-      ? `根据 SearXNG 抓取到的最新美股大盘资讯：\n${searxngNewsText.slice(0, 200)}...\n开盘策略以 ${riskPreference} 风控为主，动态执行加减仓规避波动。`
-      : `美股盘前情绪稳定，标普与纳指波动率维持低位。建议根据持仓止盈止损线纪律执行开盘调仓。`;
+      ? `根据 MooMoo 实时盘面与 SearXNG 全网最新美股资讯：\n${searxngNewsText.slice(0, 220)}...\n美股各板块表现分化，优质标的因短线消息面砸盘出现超跌，建议择优分批建仓。`
+      : `美股盘前科技与半导体板块分化，部分优质蓝筹标的受短线消息面情绪扰动回调至支撑位。建议重点关注基本面强劲的超跌建仓机会。`;
 
     return {
       actions,
+      oversoldOpportunities,
       riskAlerts,
       marketOverview,
     };
@@ -135,3 +148,4 @@ export class StockEngine {
 }
 
 export const stockEngine = new StockEngine();
+

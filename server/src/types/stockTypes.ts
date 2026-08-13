@@ -5,6 +5,8 @@ export interface StockPositionItem {
   costBasis: number;
   marketPrice: number;
   notes?: string;
+  isCleared?: boolean;
+  clearedDate?: string;
 }
 
 export interface ActionItem {
@@ -24,6 +26,9 @@ export interface ActionItem {
   projectedPnL?: number;
   projectedPnLPct?: number;
   timeHorizon?: string;
+  isOversoldOpportunity?: boolean;
+  oversoldReason?: string;
+  fundamentalScore?: number;
 }
 
 export interface RiskAlert {
@@ -44,6 +49,7 @@ export interface PositionPnLItem {
   pnlPct: number;
   costValue: number;
   concentrationPct: number;
+  isCleared?: boolean;
 }
 
 export interface TotalPnLState {
@@ -54,6 +60,7 @@ export interface TotalPnLState {
   cashBalance: number;
   netAssets: number;
   positions: PositionPnLItem[];
+  recentlyClearedPositions?: PositionPnLItem[];
 }
 
 export interface KnowledgeGraphEntityNode {
@@ -74,7 +81,7 @@ export interface KnowledgeGraphRelationEdge {
 export interface StockKnowledgeGraphItem {
   symbol: string;
   companyName: string;
-  positionCategory: "EXISTING" | "NEW_DISCOVERY";
+  positionCategory: "EXISTING" | "NEW_DISCOVERY" | "CLEARED";
   industrySector: string;
   nodes: KnowledgeGraphEntityNode[];
   edges: KnowledgeGraphRelationEdge[];
@@ -94,16 +101,25 @@ export interface PastDeductionRetroPerStock {
   distilledLesson?: string;
 }
 
+export interface CommunitySentimentItem {
+  score: number; // 0 - 100 (e.g. 78)
+  mood: "BULLISH" | "BEARISH" | "NEUTRAL";
+  keyTopics: string[];
+}
+
 export interface StockDeductionRetroItem {
   symbol: string;
   companyName?: string;
+  isCleared?: boolean;
   // 1. 每一只股票的知识图谱
   knowledgeGraph: StockKnowledgeGraphItem;
   // 2. 股票最新消息
   latestNews: string[];
-  // 3. 持仓情况
+  // 3. 社区讨论与市场情绪
+  communitySentiment?: CommunitySentimentItem;
+  // 4. 持仓情况
   position?: StockPositionItem;
-  // 4. 之前推演这只股票以及实际盘面变化的复盘
+  // 5. 之前推演这只股票以及实际盘面变化的复盘
   pastRetro: PastDeductionRetroPerStock;
   // 当前推演建议
   currentRecommendation?: ActionItem;
@@ -140,8 +156,11 @@ export interface DailyAllocationOutput {
   existingPositionGuidance: string;
   newPositionGuidance: string;
   actions: ActionItem[];
+  oversoldOpportunities?: ActionItem[];
   riskAlerts: RiskAlert[];
   knowledgeGraph: StockKnowledgeGraphItem[];
   perStockDeductionRetro: StockDeductionRetroItem[];
+  recentlyClearedPositions?: StockPositionItem[];
   narrativeReport: string;
 }
+

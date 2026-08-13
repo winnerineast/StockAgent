@@ -40,6 +40,11 @@ interface PerStockDeductionRetroCardProps {
       guidanceText?: string;
     };
     latestNews: string[];
+    communitySentiment?: {
+      score: number;
+      mood: "BULLISH" | "BEARISH" | "NEUTRAL";
+      keyTopics: string[];
+    };
     position?: {
       shares: number;
       costBasis: number;
@@ -74,11 +79,12 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
   onOpenKnowledgeGraph,
 }) => {
   const [expanded, setExpanded] = useState<boolean>(true);
-  const [subTab, setSubTab] = useState<"kg" | "news" | "position" | "retro">("retro");
+  const [subTab, setSubTab] = useState<"kg" | "news" | "community" | "position" | "retro">("retro");
 
   const rec = item.currentRecommendation;
   const pos = item.position;
   const past = item.pastRetro;
+  const sentiment = item.communitySentiment;
   const isBuy = rec?.action === "BUY";
   const isTrim = rec?.action === "TRIM" || rec?.action === "SELL";
 
@@ -98,11 +104,11 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
               <span>{item.companyName || item.symbol}</span>
               {pos && pos.shares > 0 ? (
                 <span className="px-2 py-0.5 text-[11px] font-semibold rounded-md bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
-                  实盘持仓 ({pos.shares}股)
+                  持仓中 ({pos.shares}股)
                 </span>
               ) : pos && pos.shares === 0 ? (
-                <span className="px-2 py-0.5 text-[11px] font-semibold rounded-md bg-rose-500/15 text-rose-400 border border-rose-500/30">
-                  🔴 已平仓/减仓至 0 股 (复盘评估中)
+                <span className="px-2 py-0.5 text-[11px] font-semibold rounded-md bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                  已清仓/平仓 (历史标的)
                 </span>
               ) : (
                 <span className="px-2 py-0.5 text-[11px] font-semibold rounded-md bg-slate-800 text-slate-400 border border-slate-700">
@@ -145,21 +151,17 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
               </div>
             ) : pos && pos.shares === 0 ? (
               <div className="flex flex-wrap items-center gap-2.5 text-xs text-slate-300 mt-1.5">
-                <div className="flex items-center gap-1 bg-slate-950 px-2.5 py-1 rounded-lg border border-rose-900/40 text-rose-300 font-semibold">
+                <div className="flex items-center gap-1 bg-slate-950 px-2.5 py-1 rounded-lg border border-amber-900/40 text-amber-300 font-semibold">
                   <span>持仓状态:</span>
                   <strong>0 股 (已清仓平仓)</strong>
                 </div>
                 <div className="flex items-center gap-1 bg-slate-950 px-2.5 py-1 rounded-lg border border-slate-800">
-                  <span className="text-slate-400">历史均价/基准:</span>
+                  <span className="text-slate-400">历史基准价:</span>
                   <strong className="text-white">${pos.costBasis.toFixed(2)}</strong>
                 </div>
                 <div className="flex items-center gap-1 bg-slate-950 px-2.5 py-1 rounded-lg border border-slate-800">
                   <span className="text-slate-400">当前现价:</span>
                   <strong className="text-white">${pos.marketPrice.toFixed(2)}</strong>
-                </div>
-                <div className="flex items-center gap-1 bg-slate-950 px-2.5 py-1 rounded-lg border border-slate-800">
-                  <span className="text-slate-400">减仓至0评估:</span>
-                  <strong className="text-indigo-300">观察平仓后避险/收益锁存效果</strong>
                 </div>
               </div>
             ) : (
@@ -196,7 +198,7 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
         )}
       </div>
 
-      {/* 4 Core Elements Tab Header */}
+      {/* 5 Elements Tab Header */}
       <div className="px-4 py-2 bg-slate-950/60 border-b border-slate-800 flex items-center justify-between">
         <div className="flex items-center gap-1.5 overflow-x-auto text-xs py-1">
           <button
@@ -208,7 +210,7 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
             }`}
           >
             <Layers className="w-3.5 h-3.5" />
-            <span>1. 股票操盘知识图谱</span>
+            <span>1. 知识图谱</span>
           </button>
 
           <button
@@ -220,7 +222,19 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
             }`}
           >
             <Search className="w-3.5 h-3.5" />
-            <span>2. SearXNG 实时消息</span>
+            <span>2. SearXNG 盘前新闻</span>
+          </button>
+
+          <button
+            onClick={() => setSubTab("community")}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-semibold transition-all ${
+              subTab === "community"
+                ? "bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20"
+                : "text-slate-400 hover:text-white bg-slate-900 border border-slate-800"
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>3. 社区讨论与情绪</span>
           </button>
 
           <button
@@ -232,7 +246,7 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
             }`}
           >
             <PieChart className="w-3.5 h-3.5" />
-            <span>3. MooMoo 持仓明细</span>
+            <span>4. MooMoo 持仓</span>
           </button>
 
           <button
@@ -244,7 +258,7 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
             }`}
           >
             <History className="w-3.5 h-3.5" />
-            <span>4. 前次推演 vs 盘面复盘</span>
+            <span>5. 历史复盘教训</span>
           </button>
         </div>
 
@@ -266,16 +280,20 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
                 <div className="flex items-center justify-between text-slate-400">
                   <span className="font-semibold text-white flex items-center gap-1.5">
                     <History className="w-4 h-4 text-cyan-400" />
-                    <span>历史推演与走势复盘对齐 ({past.lastStrategyDate || "前一交易日"})</span>
+                    <span>历史推演与走势复盘对齐 ({past.lastStrategyDate || "历史策略记录"})</span>
                   </span>
-                  <span className="text-emerald-400 font-bold">准确率: {past.accuracyScore || 88}%</span>
+                  <span className="text-emerald-400 font-bold">
+                    准确率: {past.accuracyScore !== undefined ? `${past.accuracyScore}%` : "暂无历史推演数据"}
+                  </span>
                 </div>
                 <p className="text-slate-300 leading-relaxed bg-slate-900 p-2.5 rounded-lg border border-slate-800/80">
-                  {past.actualPriceAction || "实盘走势与盘前推演基准线相符。"}
+                  {past.actualPriceAction || "首次载入标的，等待大模型结合知识图谱推演。"}
                 </p>
                 <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
-                  <span>前次建议: <strong className="text-cyan-300">{past.lastAction || "HOLD"}</strong></span>
-                  <span>目标止盈价: ${past.lastTargetPrice?.toFixed(2)} | 止损线: ${past.lastStopLossPrice?.toFixed(2)}</span>
+                  <span>前次建议: <strong className="text-cyan-300">{past.lastAction || "无"}</strong></span>
+                  <span>
+                    目标止盈价: {past.lastTargetPrice ? `$${past.lastTargetPrice.toFixed(2)}` : "未设定"} | 止损线: {past.lastStopLossPrice ? `$${past.lastStopLossPrice.toFixed(2)}` : "未设定"}
+                  </span>
                 </div>
               </div>
 
@@ -288,6 +306,41 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
                   <p className="text-slate-300">{past.distilledLesson}</p>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* SubTab 3: 社区讨论与情绪指数 */}
+          {subTab === "community" && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-950 border border-slate-800">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-cyan-500/10 text-cyan-400 font-bold text-sm">
+                    情绪指数: {sentiment?.score !== undefined ? `${sentiment.score}/100` : "暂无"}
+                  </div>
+                  <div>
+                    <div className="font-bold text-white text-xs">
+                      散户与机构社区倾向: <span className="text-emerald-400 font-bold">{sentiment?.mood || "未知/等待抓取"}</span>
+                    </div>
+                    <div className="text-[11px] text-slate-400">基于 SearXNG 全网实时科技社区与资讯分析</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1.5">
+                <div className="font-semibold text-slate-300 text-[11px]">社区热议焦点与消息面讨论:</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {(sentiment?.keyTopics && sentiment.keyTopics.length > 0
+                    ? sentiment.keyTopics
+                    : item.latestNews.length > 0
+                    ? item.latestNews
+                    : ["未检索到该标的公开社区讨论焦点"]
+                  ).map((t, idx) => (
+                    <span key={idx} className="px-2.5 py-1 rounded-md bg-slate-900 border border-slate-800 text-cyan-300 text-[11px]">
+                      • {t}
+                    </span>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
 

@@ -25,6 +25,10 @@ interface DeductionRetroStudioTabProps {
   rebalanceActions: any[];
   perStockItems: any[];
   retrospectives: any[];
+  marketOverview?: string;
+  oversoldOpportunities?: any[];
+  watchlist?: any[];
+  screenerActions?: any[];
   isUnlocked: boolean;
   loading: boolean;
   currentStage: StageStep | null;
@@ -44,6 +48,10 @@ export const DeductionRetroStudioTab: React.FC<DeductionRetroStudioTabProps> = (
   rebalanceActions,
   perStockItems,
   retrospectives,
+  marketOverview,
+  oversoldOpportunities = [],
+  watchlist = [],
+  screenerActions = [],
   isUnlocked,
   loading,
   currentStage,
@@ -54,19 +62,40 @@ export const DeductionRetroStudioTab: React.FC<DeductionRetroStudioTabProps> = (
 }) => {
   const [customBudget, setCustomBudget] = useState<number>(1000);
   const [riskPreference, setRiskPreference] = useState<string>("BALANCED");
+  const [filterCategory, setFilterCategory] = useState<"ALL" | "HOLDING" | "CLEARED">("ALL");
 
-  const latestRetro = retrospectives[0] || {
-    accuracyScore: 88,
-    executionMatchRate: 92,
-    avoidedLoss: 450,
-    lessonsLearned: ["严格遵守盘前知识图谱止损防线", "单标的集中度勿超 30%"],
-  };
+  // 选股与超跌建仓搜索/动作筛选
+  const [screenerSearchQuery, setScreenerSearchQuery] = useState<string>("");
+  const [screenerActionFilter, setScreenerActionFilter] = useState<string>("ALL");
 
-  const lessons: string[] = typeof latestRetro.lessonsLearnedJson === "string"
-    ? JSON.parse(latestRetro.lessonsLearnedJson)
-    : (latestRetro.lessonsLearned || []);
+  const latestRetro = retrospectives && retrospectives.length > 0 ? retrospectives[0] : null;
 
   const isPnLPos = totalPnL >= 0;
+
+  const filteredItems = perStockItems.filter((item) => {
+    if (filterCategory === "HOLDING") return item.position && item.position.shares > 0;
+    if (filterCategory === "CLEARED") return item.isCleared || (item.position && item.position.shares === 0);
+    return true;
+  });
+
+  // 汇总超跌机会与 Screener 动作列表
+  const combinedScreenerItems = [
+    ...oversoldOpportunities,
+    ...screenerActions.filter((sa) => !oversoldOpportunities.some((oo) => oo.symbol === sa.symbol)),
+  ];
+
+  const filteredScreenerItems = combinedScreenerItems.filter((item) => {
+    const matchesSearch =
+      !screenerSearchQuery ||
+      item.symbol.toLowerCase().includes(screenerSearchQuery.toLowerCase()) ||
+      (item.companyName && item.companyName.toLowerCase().includes(screenerSearchQuery.toLowerCase()));
+    const matchesFilter =
+      screenerActionFilter === "ALL" ||
+      (screenerActionFilter === "BUY" && item.action === "BUY") ||
+      (screenerActionFilter === "TRIM" && (item.action === "TRIM" || item.action === "SELL")) ||
+      (screenerActionFilter === "HOLD" && item.action === "HOLD");
+    return matchesSearch && matchesFilter;
+  });
 
   return (
     <div className="space-y-6">
@@ -76,6 +105,185 @@ export const DeductionRetroStudioTab: React.FC<DeductionRetroStudioTabProps> = (
         loading={loading}
         onOpenPipelineModal={onOpenPipelineModal}
       />
+
+      {/* 1. 美股板块大盘动态与 SearXNG 消息面全景 */}
+      <div className="glass-card p-5 border-slate-800 bg-gradient-to-r from-slate-900/90 via-slate-900/60 to-cyan-950/30">
+        <div className="flex items-center justify-between gap-4 mb-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
+              <Sparkles className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-white">美股板块大盘动态 & SearXNG 消息面全景</h2>
+              <p className="text-xs text-slate-400">基于 MooMoo OpenD 行情与 SearXNG Web 搜索全网捕捉消息面与基本面偏差</p>
+            </div>
+          </div>
+        </div>
+        <p className="text-xs text-slate-300 bg-slate-950/60 p-3.5 rounded-xl border border-slate-800/80 leading-relaxed font-normal">
+          {marketOverview || "暂无大盘资讯解析，请点击【生成/刷新盘前推演】触发 SearXNG 全网实时抓取。"}
+        </p>
+      </div>
+
+      {/* 2. 优质标的消息面超跌建仓池 & 智能选股 Studio (整合一站式选股与超跌建仓) */}
+      <div className="glass-card p-5 border-slate-800 space-y-4 bg-gradient-to-br from-slate-900/90 via-slate-900/60 to-emerald-950/20">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+              <TrendingUp className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <span>优质标的消息面超跌建仓池 & 智能选股 Studio</span>
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                  超跌强建仓 vs 自选股筛选
+                </span>
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                结合 SearXNG 消息误伤分析、MooMoo OpenD 实时盘面与全网智能选股
+              </p>
+            </div>
+          </div>
+
+          {/* Search & Filter Toolbar */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative w-40 sm:w-52">
+              <input
+                type="text"
+                placeholder="搜索代码 (如 AAPL, NVDA)..."
+                value={screenerSearchQuery}
+                onChange={(e) => setScreenerSearchQuery(e.target.value)}
+                className="w-full px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50"
+              />
+            </div>
+            <div className="flex items-center gap-1">
+              {[
+                { id: "ALL", label: "全部" },
+                { id: "BUY", label: "超跌建仓" },
+                { id: "TRIM", label: "减仓/止盈" },
+                { id: "HOLD", label: "观望" },
+              ].map((type) => (
+                <button
+                  key={type.id}
+                  onClick={() => setScreenerActionFilter(type.id)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all ${
+                    screenerActionFilter === type.id
+                      ? "bg-cyan-500 text-slate-950 font-bold"
+                      : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800"
+                  }`}
+                >
+                  {type.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* MooMoo OpenD 同步自选股 Quick Bar */}
+        {watchlist && watchlist.length > 0 && (
+          <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800/80 space-y-1.5">
+            <div className="text-[11px] font-semibold text-slate-400 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <BookOpen className="w-3.5 h-3.5 text-cyan-400" />
+                <span>MooMoo OpenD 同步自选股动向 ({watchlist.length} 标的)</span>
+              </span>
+              <span className="text-slate-500 text-[10px]">点击股票代码直接查看专属知识图谱</span>
+            </div>
+            <div className="flex items-center gap-2 overflow-x-auto pb-1">
+              {watchlist.map((item, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => onOpenKnowledgeGraph(item.symbol)}
+                  className="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 hover:border-cyan-500/40 text-xs flex items-center gap-2 shrink-0 transition-all"
+                >
+                  <span className="font-bold text-white">{item.symbol}</span>
+                  {item.price && item.price > 0 ? (
+                    <span className="text-slate-300 font-medium">${item.price.toFixed(2)}</span>
+                  ) : null}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Oversold Buy Opportunities & Screener Action Cards Grid */}
+        {filteredScreenerItems && filteredScreenerItems.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {filteredScreenerItems.map((opp, idx) => {
+              const isBuy = opp.action === "BUY";
+              const isTrim = opp.action === "TRIM" || opp.action === "SELL";
+              return (
+                <div
+                  key={idx}
+                  className={`p-4 rounded-xl bg-slate-950/90 space-y-2.5 transition-all border ${
+                    isBuy
+                      ? "border-emerald-500/40 hover:border-emerald-500/60"
+                      : isTrim
+                      ? "border-amber-500/30 hover:border-amber-500/50"
+                      : "border-slate-800 hover:border-slate-700"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`px-2.5 py-1 rounded-lg font-bold text-sm border ${
+                          isBuy
+                            ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                            : isTrim
+                            ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                            : "bg-slate-800 text-slate-300 border-slate-700"
+                        }`}
+                      >
+                        {opp.symbol}
+                      </span>
+                      <span className="text-xs font-semibold text-white">{opp.companyName || opp.symbol}</span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => onOpenKnowledgeGraph(opp.symbol)}
+                        className="px-2 py-0.5 text-[11px] rounded bg-slate-900 border border-slate-800 text-cyan-400 hover:bg-cyan-500/10"
+                      >
+                        知识图谱 ↗
+                      </button>
+                      <span
+                        className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                          isBuy
+                            ? "bg-emerald-500 text-slate-950"
+                            : isTrim
+                            ? "bg-amber-500 text-slate-950"
+                            : "bg-slate-800 text-slate-300"
+                        }`}
+                      >
+                        {isBuy ? `建议建仓 ${opp.suggestedShares} 股` : isTrim ? `建议减仓 ${opp.suggestedShares} 股` : "观望"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 rounded-lg bg-slate-900/80 border border-slate-800 text-xs text-slate-300 space-y-1">
+                    <div className="font-semibold text-emerald-300 flex items-center justify-between">
+                      <span>诊断与选股逻辑:</span>
+                      {opp.fundamentalScore ? (
+                        <span>基本面评分: <strong>{opp.fundamentalScore}/100</strong></span>
+                      ) : null}
+                    </div>
+                    <p className="text-[11px] text-slate-300 leading-relaxed">{opp.rationale || opp.oversoldReason}</p>
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs text-slate-400 pt-1">
+                    <span>预估价: <strong className="text-white">${opp.estimatedPrice}</strong></span>
+                    <span>目标价: <strong className="text-emerald-400">${opp.targetPrice || "-"}</strong></span>
+                    <span>止损防线: <strong className="text-rose-400">${opp.stopLossPrice || "-"}</strong></span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-400 italic text-center">
+            盘面暂未发现触发买入/减仓防线的自选标的，将继续实时监测 SearXNG 催化消息。
+          </div>
+        )}
+      </div>
 
       {/* Asset KPIs & Historical Retro Summary Banner */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -99,9 +307,11 @@ export const DeductionRetroStudioTab: React.FC<DeductionRetroStudioTabProps> = (
             <Award className="w-4 h-4 text-indigo-400" />
           </div>
           <div className="mt-2 text-2xl font-bold text-indigo-300 tracking-tight">
-            {latestRetro.accuracyScore || 88}%
+            {latestRetro && latestRetro.accuracyScore !== undefined ? `${latestRetro.accuracyScore}%` : "暂无推演"}
           </div>
-          <div className="mt-1 text-xs text-slate-400">规避回调损失: <strong className="text-emerald-400">${latestRetro.avoidedLoss || 450}</strong></div>
+          <div className="mt-1 text-xs text-slate-400">
+            {latestRetro && latestRetro.avoidedLoss ? `规避回调损失: $${latestRetro.avoidedLoss}` : "尚未产生复盘规避记录"}
+          </div>
         </div>
 
         {/* Floating P&L */}
@@ -118,7 +328,7 @@ export const DeductionRetroStudioTab: React.FC<DeductionRetroStudioTabProps> = (
           </div>
         </div>
 
-        {/* Portfolio Risk & Budget KPI Card (Replaces duplicate unlock card) */}
+        {/* Portfolio Risk & Budget KPI Card */}
         <div className="glass-card p-5 border-slate-800 flex flex-col justify-between">
           <div className="flex items-center justify-between text-slate-400 text-xs">
             <span>调仓风控预算 Budget</span>
@@ -131,15 +341,15 @@ export const DeductionRetroStudioTab: React.FC<DeductionRetroStudioTabProps> = (
         </div>
       </div>
 
-      {/* Main Studio Grid: Left 2 Cols (Per-stock 4-item cards) + Right 1 Col (Position Sizer & Retro Discipline) */}
+      {/* Main Studio Grid: Left 2 Cols (Per-stock 5-item cards) + Right 1 Col (Position Sizer & Retro Discipline) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left 2 Cols: Per-Stock 4 Unified Core Elements */}
+        {/* Left 2 Cols: Per-Stock Unified Core Elements */}
         <div className="lg:col-span-2 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
                 <Sparkles className="w-5 h-5 text-cyan-400" />
-                <span>实盘持仓股票【知识图谱 + 新闻 + 持仓 + 走势复盘与风控纪律】全景卡片</span>
+                <span>持仓及清仓标的【知识图谱 + 盘面 + 社区情绪 + 历史教训】推演</span>
               </h3>
               {loading && (
                 <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 text-xs font-semibold animate-pulse flex items-center gap-1">
@@ -149,18 +359,48 @@ export const DeductionRetroStudioTab: React.FC<DeductionRetroStudioTabProps> = (
               )}
             </div>
 
-            <button
-              onClick={onOpenPipelineModal}
-              className="text-xs text-cyan-400 hover:underline flex items-center gap-1 font-semibold"
-            >
-              <Bot className="w-3.5 h-3.5" />
-              <span>推演 Context 上下文检视 ↗</span>
-            </button>
+            <div className="flex items-center gap-2">
+              {/* Category Filter Tabs */}
+              <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
+                <button
+                  onClick={() => setFilterCategory("ALL")}
+                  className={`px-2.5 py-1 rounded-lg font-semibold transition-all ${
+                    filterCategory === "ALL" ? "bg-cyan-500 text-slate-950" : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  全部标的 ({perStockItems.length})
+                </button>
+                <button
+                  onClick={() => setFilterCategory("HOLDING")}
+                  className={`px-2.5 py-1 rounded-lg font-semibold transition-all ${
+                    filterCategory === "HOLDING" ? "bg-cyan-500 text-slate-950" : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  当前持仓
+                </button>
+                <button
+                  onClick={() => setFilterCategory("CLEARED")}
+                  className={`px-2.5 py-1 rounded-lg font-semibold transition-all ${
+                    filterCategory === "CLEARED" ? "bg-cyan-500 text-slate-950" : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  既往清仓
+                </button>
+              </div>
+
+              <button
+                onClick={onOpenPipelineModal}
+                className="text-xs text-cyan-400 hover:underline flex items-center gap-1 font-semibold"
+              >
+                <Bot className="w-3.5 h-3.5" />
+                <span>Context 上下文 ↗</span>
+              </button>
+            </div>
           </div>
 
           <div className="space-y-4">
-            {perStockItems.length > 0 ? (
-              perStockItems.map((item, idx) => (
+            {filteredItems.length > 0 ? (
+              filteredItems.map((item, idx) => (
                 <PerStockDeductionRetroCard
                   key={idx}
                   item={item}
@@ -168,17 +408,8 @@ export const DeductionRetroStudioTab: React.FC<DeductionRetroStudioTabProps> = (
                 />
               ))
             ) : (
-              <div className="space-y-4">
-                {[1, 2].map((i) => (
-                  <div key={i} className="glass-card p-6 border-slate-800 space-y-3 animate-pulse">
-                    <div className="flex items-center justify-between">
-                      <div className="h-6 bg-slate-800 rounded w-1/4"></div>
-                      <div className="h-6 bg-slate-800 rounded w-1/3"></div>
-                    </div>
-                    <div className="h-4 bg-slate-900 rounded w-3/4"></div>
-                    <div className="h-16 bg-slate-950 rounded w-full border border-slate-800"></div>
-                  </div>
-                ))}
+              <div className="p-8 text-center text-slate-400 text-xs glass-card border-slate-800">
+                当前筛选分类无符合标的
               </div>
             )}
           </div>

@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
 import { HeaderBar } from "./components/HeaderBar";
-import { StockScreenerTab } from "./components/StockScreenerTab";
 import { DeductionRetroStudioTab } from "./components/DeductionRetroStudioTab";
 import { StockKnowledgeGraphModal } from "./components/StockKnowledgeGraphModal";
 import { TradeUnlockModal } from "./components/TradeUnlockModal";
@@ -9,7 +8,6 @@ import { StageStep } from "./components/DeductionProgressStepper";
 import { Sparkles, PieChart, Eye } from "lucide-react";
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"screener" | "deductionRetro">("deductionRetro");
   const [loading, setLoading] = useState<boolean>(false);
   const [currentStage, setCurrentStage] = useState<StageStep | null>(null);
 
@@ -84,36 +82,40 @@ export default function App() {
         if (Array.isArray(json.data.positions) && json.data.positions.length > 0) {
           setPerStockItems((prev) => {
             if (prev && prev.length > 0) return prev;
-            return json.data.positions.map((p: any) => ({
-              symbol: p.symbol,
-              companyName: p.companyName || p.symbol,
-              knowledgeGraph: {
-                nodes: [
-                  { id: "node-1", name: "核心上游/产业链", type: "供应商", description: "主要技术与硬件供应商" },
-                  { id: "node-2", name: "行业同业竞品", type: "竞品", description: "市场竞争格局" },
-                  { id: "node-3", name: "Fed 利率决议", type: "宏观因素", description: "流动性与贴现率驱动" },
-                ],
-                edges: [
-                  { source: "核心上游/产业链", target: p.symbol, relation: "核心依赖", impact: "POSITIVE" },
-                ],
-                newsCatalysts: ["实时关注大盘动向与财报催化"],
-              },
-              latestNews: [`[${p.symbol}] 盘前交易活跃，基本面保持稳健`],
-              position: {
-                shares: p.shares,
-                costBasis: p.costBasis,
-                marketPrice: p.marketPrice || p.costBasis,
-              },
-              pastRetro: {
-                lastStrategyDate: "2026-08-12",
-                lastAction: "HOLD",
-                lastTargetPrice: (p.costBasis * 1.1),
-                lastStopLossPrice: (p.costBasis * 0.9),
-                actualPriceAction: `[${p.symbol}] 盘面走势符合操盘知识图谱基准`,
-                accuracyScore: 88,
-                distilledLesson: `[${p.symbol}] 遵守单标的防线纪律`,
-              },
-            }));
+            return json.data.positions.map((p: any) => {
+              const curP = p.marketPrice || p.costBasis;
+              const baseP = Math.max(curP, p.costBasis);
+              return {
+                symbol: p.symbol,
+                companyName: p.companyName || p.symbol,
+                knowledgeGraph: {
+                  nodes: [
+                    { id: "node-1", name: "核心上游/产业链", type: "供应商", description: "主要技术与硬件供应商" },
+                    { id: "node-2", name: "行业同业竞品", type: "竞品", description: "市场竞争格局" },
+                    { id: "node-3", name: "Fed 利率决议", type: "宏观因素", description: "流动性与贴现率驱动" },
+                  ],
+                  edges: [
+                    { source: "核心上游/产业链", target: p.symbol, relation: "核心依赖", impact: "POSITIVE" },
+                  ],
+                  newsCatalysts: ["实时关注大盘动向与财报催化"],
+                },
+                latestNews: [`[${p.symbol}] 盘前交易活跃，基本面保持稳健`],
+                position: {
+                  shares: p.shares,
+                  costBasis: p.costBasis,
+                  marketPrice: curP,
+                },
+                pastRetro: {
+                  lastStrategyDate: undefined,
+                  lastAction: "HOLD",
+                  lastTargetPrice: undefined,
+                  lastStopLossPrice: undefined,
+                  actualPriceAction: `[${p.symbol}] 首次载入标的，等待大模型结合知识图谱推演...`,
+                  accuracyScore: undefined,
+                  distilledLesson: undefined,
+                },
+              };
+            });
           });
         }
       }
@@ -293,35 +295,9 @@ export default function App() {
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 lg:px-8 py-6 space-y-6">
-        {/* Navigation Tabs (Merged Deduction & Retrospective Studio) */}
-        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setActiveTab("deductionRetro")}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
-                activeTab === "deductionRetro"
-                  ? "bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/20"
-                  : "bg-slate-900 text-slate-400 hover:text-white border border-slate-800"
-              }`}
-            >
-              <PieChart className="w-4 h-4" />
-              <span>【推演与复盘 Studio】</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab("screener")}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
-                activeTab === "screener"
-                  ? "bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/20"
-                  : "bg-slate-900 text-slate-400 hover:text-white border border-slate-800"
-              }`}
-            >
-              <Sparkles className="w-4 h-4" />
-              <span>【选股 Studio】</span>
-            </button>
-          </div>
-
-          {deductionPipeline && (
+        {/* Context Inspector Bar (if deduction data exists) */}
+        {deductionPipeline && (
+          <div className="flex items-center justify-end border-b border-slate-800/80 pb-3">
             <button
               onClick={() => setDeductionModalOpen(true)}
               className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/20 transition-all text-xs font-semibold"
@@ -329,42 +305,34 @@ export default function App() {
               <Eye className="w-4 h-4 text-cyan-400" />
               <span>推演 Context 上下文检视器</span>
             </button>
+          </div>
+        )}
+
+        {/* Unified Studio Workspace */}
+        <DeductionRetroStudioTab
+          netAssets={portfolioData.netAssets || 0}
+          cashBalance={portfolioData.cashBalance || 0}
+          totalMarketValue={portfolioData.totalMarketValue || 0}
+          totalPnL={portfolioData.totalPnL || 0}
+          totalPnLPct={portfolioData.totalPnLPct || 0}
+          positions={portfolioData.positions || []}
+          rebalanceActions={screenerActions}
+          perStockItems={perStockItems}
+          retrospectives={retrospectives}
+          marketOverview={marketOverview}
+          watchlist={watchlist}
+          screenerActions={screenerActions}
+          oversoldOpportunities={screenerActions.filter(
+            (a) => a.isOversoldOpportunity || (a.action === "BUY" && a.fundamentalScore && a.fundamentalScore >= 85)
           )}
-        </div>
-
-        {/* Tab Content */}
-        {activeTab === "deductionRetro" && (
-          <DeductionRetroStudioTab
-            netAssets={portfolioData.netAssets || 0}
-            cashBalance={portfolioData.cashBalance || 0}
-            totalMarketValue={portfolioData.totalMarketValue || 0}
-            totalPnL={portfolioData.totalPnL || 0}
-            totalPnLPct={portfolioData.totalPnLPct || 0}
-            positions={portfolioData.positions || []}
-            rebalanceActions={screenerActions}
-            perStockItems={perStockItems}
-            retrospectives={retrospectives}
-            isUnlocked={isUnlocked}
-            loading={loading}
-            currentStage={currentStage}
-            onOpenKnowledgeGraph={handleOpenKnowledgeGraph}
-            onOpenUnlockModal={() => setUnlockModalOpen(true)}
-            onExecuteRebalance={handleExecuteRebalance}
-            onOpenPipelineModal={() => setDeductionModalOpen(true)}
-          />
-        )}
-
-        {activeTab === "screener" && (
-          <StockScreenerTab
-            watchlist={watchlist}
-            screenerActions={screenerActions}
-            marketOverview={marketOverview}
-            searxngConnected={searxngConnected}
-            onOpenKnowledgeGraph={handleOpenKnowledgeGraph}
-            onAddToPositionManager={(symbol) => setActiveTab("deductionRetro")}
-            onTriggerSearch={() => {}}
-          />
-        )}
+          isUnlocked={isUnlocked}
+          loading={loading}
+          currentStage={currentStage}
+          onOpenKnowledgeGraph={handleOpenKnowledgeGraph}
+          onOpenUnlockModal={() => setUnlockModalOpen(true)}
+          onExecuteRebalance={handleExecuteRebalance}
+          onOpenPipelineModal={() => setDeductionModalOpen(true)}
+        />
       </main>
 
       {/* Modals */}

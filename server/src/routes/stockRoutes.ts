@@ -120,6 +120,9 @@ stockRouter.get("/portfolio", async (_req: Request, res: Response) => {
     const totalPnLPct = totalCostBasis > 0 ? (totalPnL / totalCostBasis) * 100 : 0;
     const netAssets = totalMarketValue + portfolio.cashBalance;
 
+    const activeSymbols = new Set(enrichedPositions.map((p) => p.symbol.toUpperCase()));
+    const recentlyClearedPositions = enrichedPositions.filter((p) => p.shares === 0);
+
     return res.json({
       success: true,
       data: {
@@ -134,10 +137,12 @@ stockRouter.get("/portfolio", async (_req: Request, res: Response) => {
         totalPnL: Number(totalPnL.toFixed(2)),
         totalPnLPct: Number(totalPnLPct.toFixed(2)),
         positions: enrichedPositions,
+        recentlyClearedPositions,
         fromOpenD: openDData.fromOpenD,
         rawMessage: openDData.rawMessage,
       },
     });
+
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message || err });
   }

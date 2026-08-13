@@ -228,6 +228,33 @@ export class MooMooAdapter {
       changePercent: number;
     }>
   > {
+    // 优先通过 Python 桥接脚拉取 OpenD 的真实最新现价
+    try {
+      const realData = await this.queryRealProtobufPortfolio();
+      if (realData && Array.isArray(realData.positions) && realData.positions.length > 0) {
+        const quotesMap = new Map<string, number>();
+        realData.positions.forEach((p) => {
+          if (p.marketPrice && p.marketPrice > 0) {
+            quotesMap.set(p.symbol.toUpperCase(), p.marketPrice);
+          }
+        });
+
+        const targetSymbols = symbols && symbols.length > 0
+          ? symbols
+          : realData.positions.map((p) => p.symbol);
+
+        return targetSymbols.map((s) => {
+          const sym = s.toUpperCase();
+          const livePrice = quotesMap.get(sym) || 0;
+          return {
+            symbol: sym,
+            price: Number(livePrice.toFixed(2)),
+            changePercent: 0,
+          };
+        });
+      }
+    } catch (e) {}
+
     let targetSymbols = symbols && symbols.length > 0 ? symbols : [];
     if (targetSymbols.length === 0) {
       try {
@@ -238,100 +265,17 @@ export class MooMooAdapter {
       } catch (err) {}
     }
 
-    if (targetSymbols.length === 0) {
-      targetSymbols = ["AAPL", "NVDA", "TSLA", "MSFT", "AMD"];
-    }
-
-    const targetSecurities = targetSymbols.map((s) => ({
-      market: 11,
-      code: s.toUpperCase(),
-    }));
-
-    const defaultQuotes = targetSymbols.map((s) => ({
+    return targetSymbols.map((s) => ({
       symbol: s.toUpperCase(),
-      price: 150.0 + Math.random() * 50,
-      changePercent: Number((Math.random() * 6 - 3).toFixed(2)),
+      price: 0,
+      changePercent: 0,
     }));
-
-    return new Promise((resolve) => {
-      let isDone = false;
-      let rxBuf = Buffer.alloc(0);
-
-      const safeDone = (res: any) => {
-        if (!isDone) {
-          isDone = true;
-          try { client.destroy(); } catch (e) {}
-          resolve(res);
-        }
-      };
-
-      const timeout = setTimeout(() => {
-        safeDone(defaultQuotes);
-      }, 3000);
-
-      const client = new net.Socket();
-      let stage = 1;
-
-      client.connect(OPEND_PORT, OPEND_HOST, () => {
-        client.write(makeOpenDPacket(1001, { c2s: { clientVer: 100, clientID: "StockAgent", recvNotify: true } }, 1));
-      });
-
-      client.on("data", (chunk: any) => {
-        try {
-          rxBuf = Buffer.concat([rxBuf, Buffer.from(chunk)]);
-          const { packets, remaining } = parseOpenDPackets(rxBuf);
-          rxBuf = Buffer.from(remaining);
-
-          for (const pkt of packets) {
-            if (stage === 1) {
-              stage = 2;
-              client.write(makeOpenDPacket(3001, { c2s: { securityList: targetSecurities, subTypeList: [1], isSubOrUnSub: true } }, 2));
-            } else if (stage === 2) {
-              stage = 3;
-              client.write(makeOpenDPacket(3004, { c2s: { securityList: targetSecurities } }, 3));
-            } else if (stage === 3) {
-              clearTimeout(timeout);
-              const basicQotList = pkt?.s2c?.basicQotList || [];
-              if (basicQotList.length > 0) {
-                const quotes = basicQotList.map((q: any) => {
-                  const symbol = (q.security?.code || "").toUpperCase();
-                  const curPrice = q.curPrice || q.lastClosePrice || 0;
-                  return {
-                    symbol,
-                    price: curPrice,
-                    changePercent: q.changeRate || 0,
-                  };
-                });
-                safeDone(quotes);
-              } else {
-                safeDone(defaultQuotes);
-              }
-            }
-          }
-        } catch (e) {
-          clearTimeout(timeout);
-          safeDone(defaultQuotes);
-        }
-      });
-
-      client.on("error", () => {
-        clearTimeout(timeout);
-        safeDone(defaultQuotes);
-      });
-    });
   }
 
   public async fetchWatchlistFromOpenD(): Promise<Array<{ symbol: string; companyName: string }>> {
     const isAlive = await openDaemonManager.checkOpenDAlive();
     if (!isAlive) {
-      return [
-        { symbol: "AAPL", companyName: "Apple Inc." },
-        { symbol: "NVDA", companyName: "NVIDIA Corp." },
-        { symbol: "TSLA", companyName: "Tesla Inc." },
-        { symbol: "MSFT", companyName: "Microsoft Corp." },
-        { symbol: "AMD", companyName: "Advanced Micro Devices" },
-        { symbol: "PLTR", companyName: "Palantir Technologies" },
-      ];
+      return [];
     }
 
     return new Promise((resolve) => {
@@ -341,11 +285,7 @@ export class MooMooAdapter {
 
       const timeout = setTimeout(() => {
         client.destroy();
-        resolve([
-          { symbol: "AAPL", companyName: "Apple Inc." },
-          { symbol: "NVDA", companyName: "NVIDIA Corp." },
-          { symbol: "TSLA", companyName: "Tesla Inc." },
-        ]);
+        resolve([]);
       }, 3000);
 
       client.connect(OPEND_PORT, OPEND_HOST, () => {
