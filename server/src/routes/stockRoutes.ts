@@ -168,7 +168,7 @@ stockRouter.get("/watchlist", async (_req: Request, res: Response) => {
     return {
       symbol: w.symbol,
       companyName: w.companyName,
-      price: q ? q.price : 150.0,
+      price: q ? q.price : 0.0,
       changePercent: q ? q.changePercent : 0.0,
     };
   });
@@ -176,11 +176,14 @@ stockRouter.get("/watchlist", async (_req: Request, res: Response) => {
   return res.json({ success: true, data });
 });
 
-// 5. 获取当前后台真实推演阶段
+// 5. 获取当前后台真实推演阶段及实时 Context 上下文
 stockRouter.get("/strategy/stage", (_req: Request, res: Response) => {
   return res.json({
     success: true,
-    data: dailyStrategyDirector.currentActiveStage,
+    data: {
+      stage: dailyStrategyDirector.currentActiveStage,
+      liveDeductionPipeline: dailyStrategyDirector.liveDeductionPipeline,
+    },
   });
 });
 
@@ -199,18 +202,25 @@ stockRouter.post("/strategy/generate", async (req: Request, res: Response) => {
   }
 });
 
-// 6. 获取历史建议列表 (时间序列)
+// 6. 获取历史建议列表 (包含历史模型 Context 算力与推理记录)
 stockRouter.get("/strategy/history", async (_req: Request, res: Response) => {
   const history = await prisma.dailyStrategy.findMany({
     orderBy: { createdAt: "desc" },
     take: 15,
   });
 
-  const parsed = history.map((h) => ({
-    ...h,
-    actions: JSON.parse(h.actionsJson || "[]"),
-    riskAlerts: JSON.parse(h.riskAlertsJson || "[]"),
-  }));
+  const parsed = history.map((h) => {
+    let deductionPipeline = null;
+    if (h.deductionPipelineJson) {
+      try { deductionPipeline = JSON.parse(h.deductionPipelineJson); } catch (e) {}
+    }
+    return {
+      ...h,
+      actions: JSON.parse(h.actionsJson || "[]"),
+      riskAlerts: JSON.parse(h.riskAlertsJson || "[]"),
+      deductionPipeline,
+    };
+  });
 
   return res.json({ success: true, data: parsed });
 });

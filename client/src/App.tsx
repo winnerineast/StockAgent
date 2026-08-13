@@ -78,28 +78,26 @@ export default function App() {
       if (json.success && json.data) {
         setPortfolioData(json.data);
 
-        // 如果单股卡片列表为空，提前用实盘持仓预构建卡片结构，确保图谱与持仓即刻可见
         if (Array.isArray(json.data.positions) && json.data.positions.length > 0) {
           setPerStockItems((prev) => {
             if (prev && prev.length > 0) return prev;
             return json.data.positions.map((p: any) => {
               const curP = p.marketPrice || p.costBasis;
-              const baseP = Math.max(curP, p.costBasis);
               return {
                 symbol: p.symbol,
                 companyName: p.companyName || p.symbol,
                 knowledgeGraph: {
-                  nodes: [
-                    { id: "node-1", name: "核心上游/产业链", type: "供应商", description: "主要技术与硬件供应商" },
-                    { id: "node-2", name: "行业同业竞品", type: "竞品", description: "市场竞争格局" },
-                    { id: "node-3", name: "Fed 利率决议", type: "宏观因素", description: "流动性与贴现率驱动" },
-                  ],
-                  edges: [
-                    { source: "核心上游/产业链", target: p.symbol, relation: "核心依赖", impact: "POSITIVE" },
-                  ],
-                  newsCatalysts: ["实时关注大盘动向与财报催化"],
+                  symbol: p.symbol,
+                  companyName: p.companyName || p.symbol,
+                  positionCategory: "EXISTING",
+                  industrySector: "股票知识图谱实体网络",
+                  nodes: [],
+                  edges: [],
+                  newsCatalysts: [],
+                  actionAdvice: "HOLD",
+                  guidanceText: "知识图谱载入中...",
                 },
-                latestNews: [`[${p.symbol}] 盘前交易活跃，基本面保持稳健`],
+                latestNews: [],
                 position: {
                   shares: p.shares,
                   costBasis: p.costBasis,
@@ -107,10 +105,10 @@ export default function App() {
                 },
                 pastRetro: {
                   lastStrategyDate: undefined,
-                  lastAction: "HOLD",
+                  lastAction: undefined,
                   lastTargetPrice: undefined,
                   lastStopLossPrice: undefined,
-                  actualPriceAction: `[${p.symbol}] 首次载入标的，等待大模型结合知识图谱推演...`,
+                  actualPriceAction: "首次载入持仓，等待 Map-Reduce 推演...",
                   accuracyScore: undefined,
                   distilledLesson: undefined,
                 },
@@ -142,6 +140,21 @@ export default function App() {
     } catch (e) {}
   };
 
+  const [strategyHistory, setStrategyHistory] = useState<any[]>([]);
+
+  const fetchStrategyHistory = async () => {
+    try {
+      const res = await fetch("/api/stock/strategy/history");
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        setStrategyHistory(json.data);
+        if (json.data.length > 0 && json.data[0].deductionPipeline) {
+          setDeductionPipeline(json.data[0].deductionPipeline);
+        }
+      }
+    } catch (e) {}
+  };
+
   const handleGenerateStrategy = async (overrideBudget?: number, overrideModel?: string) => {
     setLoading(true);
     const modelUsed = overrideModel || selectedOllamaModel || ollamaStatus.recommendedModel || "Ollama";
@@ -155,13 +168,14 @@ export default function App() {
       progressPercent: 15,
     });
 
-    // 开启后台真实执行 Stage 轮询 (400ms 间隔)
+    // 开启后台真实执行 Stage 与实时模型 Context 轮询 (400ms 间隔)
     const stagePollInterval = setInterval(async () => {
       try {
         const res = await fetch("/api/stock/strategy/stage");
         const json = await res.json();
         if (json.success && json.data) {
-          setCurrentStage(json.data);
+          if (json.data.stage) setCurrentStage(json.data.stage);
+          if (json.data.liveDeductionPipeline) setDeductionPipeline(json.data.liveDeductionPipeline);
         }
       } catch (e) {}
     }, 400);
@@ -181,9 +195,10 @@ export default function App() {
         setScreenerActions(json.data.output.actions || []);
         setMarketOverview(json.data.output.marketOverview || "");
         setPerStockItems(json.data.output.perStockDeductionRetro || []);
-        setDeductionPipeline(json.data.deductionPipeline || null);
+        if (json.data.deductionPipeline) setDeductionPipeline(json.data.deductionPipeline);
         await fetchPortfolio();
         await fetchRetrospectives();
+        await fetchStrategyHistory();
 
         setCurrentStage({
           step: 6,
@@ -251,6 +266,7 @@ export default function App() {
     fetchPortfolio();
     fetchWatchlist();
     fetchRetrospectives();
+    fetchStrategyHistory();
     handleGenerateStrategy();
 
     // 3 秒定时轻量轮询连通状态 (MooMoo OpenD, SearXNG, Ollama)
@@ -353,6 +369,7 @@ export default function App() {
         isOpen={deductionModalOpen}
         onClose={() => setDeductionModalOpen(false)}
         pipelineData={deductionPipeline}
+        strategyHistory={strategyHistory}
       />
     </div>
   );

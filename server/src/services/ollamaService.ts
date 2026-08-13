@@ -1,6 +1,13 @@
 import os from "os";
 import { execSync } from "child_process";
-import { ActionItem, RiskAlert, StockPositionItem, StockKnowledgeGraphItem } from "../types/stockTypes";
+import {
+  ActionItem,
+  RiskAlert,
+  StockPositionItem,
+  StockKnowledgeGraphItem,
+  SingleStockIntel,
+  StockFundamentals,
+} from "../types/stockTypes";
 
 export interface HardwareInfo {
   totalRamGb: number;
@@ -197,111 +204,178 @@ export class OllamaService {
     };
   }
 
-  public buildPromptPayload(context: {
-    positions: StockPositionItem[];
-    watchlist: Array<{ symbol: string; companyName: string }>;
-    quotesMap: Map<string, number>;
-    searxngNewsText: string;
-    knowledgeGraphs: StockKnowledgeGraphItem[];
-    lessonsLearned: string[];
-    totalBudget: number;
-    cashBalance: number;
-    riskPreference: string;
-  }): {
-    promptText: string;
-    kgContextText: string;
-    positionsText: string;
-    lessonsText: string;
-    searxngNewsText: string;
-  } {
-    const kgContextText = context.knowledgeGraphs
-      .map((kg) => {
-        const nodesText = kg.nodes.map((n) => `  - [${n.type}] ${n.name}: ${n.description || ""}`).join("\n");
-        const edgesText = kg.edges.map((e) => `  - ${e.source} --(${e.relation})--> ${e.target} [${e.impact}]`).join("\n");
-        return `### 股票代码: ${kg.symbol} (${kg.industrySector})\n【实体节点】:\n${nodesText}\n【关系关联边】:\n${edgesText}\n【个股催化剂】:\n${kg.newsCatalysts.join("; ")}`;
-      })
-      .join("\n\n");
-
-    const positionsText = context.positions
-      .map((p) => {
-        const price = context.quotesMap.get(p.symbol.toUpperCase()) || p.marketPrice || p.costBasis;
-        const pnlPct = p.costBasis > 0 ? (((price - p.costBasis) / p.costBasis) * 100).toFixed(1) : "0";
-        return `- 代码: ${p.symbol}, 持有: ${p.shares}股, 成本价: $${p.costBasis.toFixed(2)}, 当前现价: $${price.toFixed(2)}, 浮盈亏: ${pnlPct}%`;
-      })
-      .join("\n");
-
-    const lessonsText = context.lessonsLearned.map((l, i) => `${i + 1}. ${l}`).join("\n");
-
-    const promptText = `你是一位专业的美股量化交易主控专家。请结合以下【硬件调优模型】、【实时大盘新闻】、【实盘持仓】、【每只股票的操盘知识图谱】及【历史风控教训】，为今日美股开盘制定精确定量的加减仓操盘指南。
+  /**
+   * Stage A Chunk: 独立推演大盘宏观与明星热门板块
+   */
+  public async generateMacroSummaryWithOllama(
+    modelName: string,
+    searxngNewsText: string
+  ): Promise<string> {
+    const prompt = `请作为专业美股量化宏观分析师，根据以下从 SearXNG 抓取到的最新美股全网盘前资讯，简短总结今日美股大盘走向、主要市场情绪与明星热门板块。
 
 ========================================
-一、盘前 SearXNG 实时新闻与大盘资讯
-========================================
-${context.searxngNewsText || "美股大盘盘前波动率平稳，关注 Fed 利率走势。"}
-
-========================================
-二、实盘持仓与资金状态
-========================================
-- 可用现金余额: $${context.cashBalance.toFixed(2)}
-- 本次调仓可用预算: $${context.totalBudget.toFixed(2)}
-- 交易风险偏好: ${context.riskPreference} (保守/平衡/激进)
-持仓明细:
-${positionsText || "当前暂无持仓"}
-
-========================================
-三、单只股票专属操盘知识图谱 (Knowledge Graph)
-========================================
-${kgContextText}
-
-========================================
-四、历史复盘积累的风控教训与纪律 (Lessons Learned)
-========================================
-${lessonsText}
+全网盘前资讯:
+${searxngNewsText || "盘前资讯暂未检索到显著异常，维持平稳动向。"}
 
 ========================================
 输出要求:
-请分析上述所有上下文，以纯 JSON 格式输出以下结构，不要包含 markdown 代码块外多余文本：
-{
-  "marketOverview": "简短分析当前大盘与持仓状况的宏观总结",
-  "riskAlerts": [
-    {
-      "level": "WARNING" | "CRITICAL" | "INFO",
-      "title": "预警标题",
-      "description": "预警详细说明",
-      "relatedSymbol": "股票代码"
-    }
-  ],
-  "actions": [
-    {
-      "action": "BUY" | "TRIM" | "HOLD" | "SELL",
-      "symbol": "股票代码",
-      "companyName": "公司名称",
-      "suggestedShares": 10,
-      "estimatedPrice": 150,
-      "estimatedAmount": 1500,
-      "rationale": "基于知识图谱上下游、SearXNG 催化剂与止盈止损线给出的调仓理由",
-      "urgency": "HIGH" | "MEDIUM" | "LOW",
-      "targetPrice": 170.0,
-      "stopLossPrice": 138.0,
-      "riskRewardRatio": 2.5
-    }
-  ]
-}`;
+输出一段不超过 200 字的精炼宏观大盘与热门板块总结。`;
 
-    return {
-      promptText,
-      kgContextText,
-      positionsText,
-      lessonsText,
-      searxngNewsText: context.searxngNewsText,
-    };
+    try {
+      const resp = await fetch(`${this.baseUrl}/api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: modelName,
+          messages: [{ role: "user", content: prompt }],
+          stream: false,
+        }),
+      });
+
+      if (resp.ok) {
+        const resData: any = await resp.json();
+        const content = resData?.message?.content;
+        if (content) return content.trim();
+      }
+    } catch (e) {}
+
+    return searxngNewsText ? searxngNewsText.slice(0, 180) : "美股盘前大盘走势分化，建议重点关注基本面与催化消息。";
   }
 
+  /**
+   * Stage B Map Chunk: 针对单只候选股票做分段小 Context 推理 (含盘面、基本面、消息、情绪、大资金与衰减图谱)
+   * 纯动态构造，零硬编码示例
+   */
+  public async deduceSingleStockWithOllama(
+    modelName: string,
+    stockData: {
+      symbol: string;
+      companyName?: string;
+      currentPrice: number;
+      holdingPosition?: StockPositionItem;
+      intel: SingleStockIntel;
+      knowledgeGraph?: StockKnowledgeGraphItem;
+      fundamentals?: StockFundamentals;
+      lessonsLearned: string[];
+    }
+  ): Promise<ActionItem | null> {
+    const s = stockData.symbol;
+    const cName = stockData.companyName || s;
+    const curP = stockData.currentPrice;
+    const pos = stockData.holdingPosition;
+    const news = stockData.intel.latestNews;
+    const flow = stockData.intel.capitalFlow;
+    const fund = stockData.fundamentals;
+    const kg = stockData.knowledgeGraph;
+
+    const posInfoText = pos && pos.shares > 0
+      ? `目前持仓 ${pos.shares} 股，成本价 $${pos.costBasis.toFixed(2)}，浮动盈亏 ${(((curP - pos.costBasis) / pos.costBasis) * 100).toFixed(1)}%`
+      : "当前暂无持仓 (为候选观察/建仓标的)";
+
+    const newsText = news.length > 0 ? news.join("\n") : "暂无最新新闻";
+    const flowText = flow ? `趋势: ${flow.trend}, 详情: ${flow.description}` : "资金动向未知";
+    const fundText = fund
+      ? `PE: ${fund.peRatio ?? "未知"}, 营收增长: ${fund.revenueGrowthPct ?? "未知"}%, 净利润率: ${fund.netMarginPct ?? "未知"}%, 下次财报日: ${fund.nextEarningsDate ?? "未知"}`
+      : "基本面数据暂未录入";
+
+    const kgText = kg
+      ? `图谱节点: ${kg.nodes.map((n) => `[${n.type}]${n.name}`).join(", ")}; 图谱记忆: ${kg.compressedSummary || "无"}`
+      : "无图谱扩展节点";
+
+    const lessonsText = stockData.lessonsLearned.length > 0
+      ? stockData.lessonsLearned.map((l, i) => `${i + 1}. ${l}`).join("\n")
+      : "无历史风控教训";
+
+    const prompt = `分析美股标的 [${s}] (${cName}) 的全要素数据，给出今日操作建议与止盈止损价格。
+
+【盘面与持仓】:
+- 当前现价: $${curP.toFixed(2)}
+- 持仓状况: ${posInfoText}
+
+【基本面财报】:
+${fundText}
+
+【盘前新闻与催化】:
+${newsText}
+
+【主力/机构大资金走向】:
+${flowText}
+
+【操盘知识图谱】:
+${kgText}
+
+【历史复盘风控教训】:
+${lessonsText}
+
+输出要求:
+请以纯 JSON 格式输出以下结构 (不要包含 markdown 额外文本):
+{
+  "action": "BUY" | "TRIM" | "HOLD" | "SELL",
+  "symbol": "${s}",
+  "companyName": "${cName}",
+  "suggestedShares": 10,
+  "estimatedPrice": ${curP.toFixed(2)},
+  "estimatedAmount": ${curP.toFixed(2)},
+  "rationale": "操作理由说明",
+  "urgency": "HIGH" | "MEDIUM" | "LOW",
+  "targetPrice": 0.0,
+  "stopLossPrice": 0.0,
+  "riskRewardRatio": 2.0
+}`;
+
+    try {
+      const resp = await fetch(`${this.baseUrl}/api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: modelName,
+          messages: [{ role: "user", content: prompt }],
+          stream: false,
+          format: "json",
+        }),
+      });
+
+      if (resp.ok) {
+        const resData: any = await resp.json();
+        const contentText = resData?.message?.content || "";
+        let jsonParsed: any = null;
+        try {
+          jsonParsed = JSON.parse(contentText);
+        } catch (e) {
+          const match = contentText.match(/\{[\s\S]*\}/);
+          if (match) jsonParsed = JSON.parse(match[0]);
+        }
+
+        if (jsonParsed && jsonParsed.action && jsonParsed.symbol) {
+          return {
+            action: jsonParsed.action,
+            symbol: s,
+            companyName: cName,
+            suggestedShares: Number(jsonParsed.suggestedShares || 0),
+            estimatedPrice: curP,
+            estimatedAmount: Number(((jsonParsed.suggestedShares || 0) * curP).toFixed(2)),
+            rationale: jsonParsed.rationale || `基于 [${s}] 盘面现价 $${curP} 与全维度资讯推演`,
+            urgency: jsonParsed.urgency || "MEDIUM",
+            targetPrice: jsonParsed.targetPrice ? Number(jsonParsed.targetPrice) : Number((curP * 1.12).toFixed(2)),
+            stopLossPrice: jsonParsed.stopLossPrice ? Number(jsonParsed.stopLossPrice) : Number((curP * 0.92).toFixed(2)),
+            riskRewardRatio: jsonParsed.riskRewardRatio ? Number(jsonParsed.riskRewardRatio) : 2.0,
+          };
+        }
+      }
+    } catch (e) {}
+
+    return null;
+  }
+
+  /**
+   * Stage C Master Fusion: 汇总分段 Map-Reduce 结果生成完整推演结果
+   */
   public async generateStrategyWithOllama(
     modelName: string,
     context: {
       positions: StockPositionItem[];
-      watchlist: Array<{ symbol: string; companyName: string }>;
+      candidateSymbols: string[];
+      candidateStockIntels: Map<string, SingleStockIntel>;
       quotesMap: Map<string, number>;
       searxngNewsText: string;
       knowledgeGraphs: StockKnowledgeGraphItem[];
@@ -313,61 +387,69 @@ ${lessonsText}
   ): Promise<OllamaDeductionResult> {
     const status = await this.getStatus();
     if (!status.connected || status.models.length === 0) {
-      throw new Error("Ollama 服务未连接或未安装任何 LLM 模型");
+      throw new Error("Ollama 服务未连接");
     }
 
     const selectedModel = status.models.includes(modelName) ? modelName : status.recommendedModel || status.models[0];
-    const payload = this.buildPromptPayload(context);
-    const prompt = payload.promptText;
 
-    try {
-      const resp = await fetch(`${this.baseUrl}/api/chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: selectedModel,
-          messages: [{ role: "user", content: prompt }],
-          stream: false,
-          format: "json",
-        }),
+    // Stage A: 宏观 Chunk 推理
+    const macroOverview = await this.generateMacroSummaryWithOllama(selectedModel, context.searxngNewsText);
+
+    // Stage B: 候选股票 Map Chunk 分段推理
+    const actions: ActionItem[] = [];
+    const riskAlerts: RiskAlert[] = [];
+
+    for (const sym of context.candidateSymbols) {
+      const curP = context.quotesMap.get(sym.toUpperCase()) || 0;
+      if (curP <= 0) continue;
+
+      const pos = context.positions.find((p) => p.symbol.toUpperCase() === sym.toUpperCase());
+      const intel = context.candidateStockIntels.get(sym.toUpperCase()) || {
+        symbol: sym,
+        latestNews: [],
+        communitySentiment: { mood: "UNKNOWN", keyTopics: [] },
+        capitalFlow: { trend: "NEUTRAL", description: "未知" },
+      };
+      const kg = context.knowledgeGraphs.find((k) => k.symbol.toUpperCase() === sym.toUpperCase());
+
+      const itemRes = await this.deduceSingleStockWithOllama(selectedModel, {
+        symbol: sym,
+        companyName: pos?.companyName || sym,
+        currentPrice: curP,
+        holdingPosition: pos,
+        intel,
+        knowledgeGraph: kg,
+        lessonsLearned: context.lessonsLearned,
       });
 
-      if (!resp.ok) {
-        throw new Error(`Ollama 响应 HTTP ${resp.status}`);
-      }
-
-      const resData: any = await resp.json();
-      const contentText = resData?.message?.content || "";
-
-      let jsonParsed: any = null;
-      try {
-        jsonParsed = JSON.parse(contentText);
-      } catch (e) {
-        const jsonMatch = contentText.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          jsonParsed = JSON.parse(jsonMatch[0]);
+      if (itemRes) {
+        actions.push(itemRes);
+        if (pos && pos.costBasis > 0) {
+          const pnlPct = ((curP - pos.costBasis) / pos.costBasis) * 100;
+          if (pnlPct <= -8.0) {
+            riskAlerts.push({
+              level: "CRITICAL",
+              title: `[${sym}] 触发止损戒备`,
+              description: `当前浮亏 ${pnlPct.toFixed(1)}%，已下破 -8.0% 防线`,
+              relatedSymbol: sym,
+            });
+          }
         }
       }
-
-      if (jsonParsed && Array.isArray(jsonParsed.actions)) {
-        return {
-          actions: jsonParsed.actions,
-          riskAlerts: jsonParsed.riskAlerts || [],
-          marketOverview: jsonParsed.marketOverview || `Ollama (${selectedModel}) 结合知识图谱与新闻推演完成`,
-          promptText: prompt,
-          rawOllamaResponse: contentText,
-          knowledgeGraphContext: payload.kgContextText,
-          searxngNewsContext: payload.searxngNewsText,
-          positionsContext: payload.positionsText,
-          lessonsContext: payload.lessonsText,
-          modelUsed: selectedModel,
-        };
-      }
-    } catch (err: any) {
-      console.warn(`[OllamaService] 模型 ${selectedModel} 推理异常:`, err.message || err);
     }
 
-    throw new Error(`Ollama 模型 ${selectedModel} 推理或解析失败`);
+    return {
+      actions,
+      riskAlerts,
+      marketOverview: macroOverview,
+      promptText: `[Map-Reduce Chunked Pipeline Execute on ${selectedModel}]`,
+      rawOllamaResponse: JSON.stringify({ macroOverview, actionsCount: actions.length }),
+      knowledgeGraphContext: `${context.knowledgeGraphs.length} 标的知识图谱数据组装完毕`,
+      searxngNewsContext: context.searxngNewsText,
+      positionsContext: `${context.positions.length} 笔持仓明细`,
+      lessonsContext: `${context.lessonsLearned.length} 条纪律与教训`,
+      modelUsed: selectedModel,
+    };
   }
 }
 

@@ -117,7 +117,7 @@ export class MooMooAdapter {
                 if (data.success && Array.isArray(data.positions)) {
                   this.isTradeUnlocked = true;
                   return resolve({
-                    cashBalance: data.detectedCash !== undefined ? data.detectedCash : 10.77,
+                    cashBalance: data.detectedCash !== undefined ? data.detectedCash : 0.0,
                     positions: data.positions.map((p: any) => ({
                       symbol: p.symbol,
                       companyName: p.companyName || p.symbol,

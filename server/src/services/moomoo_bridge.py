@@ -49,10 +49,10 @@ try:
                 'marketPrice': real_m_price
             })
 
-    cash = 86.13
+    cash = 0.0
     if ret_funds == 0 and not funds_df.empty:
         r = funds_df.iloc[0]
-        cash = float(r.get('us_cash', 0) or r.get('cash', 0) or 86.13)
+        cash = float(r.get('us_cash', 0) or r.get('cash', 0) or 0.0)
 
     print(json.dumps({
         'success': True,

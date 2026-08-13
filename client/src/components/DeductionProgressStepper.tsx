@@ -30,11 +30,11 @@ export const STAGES_LIST: Array<{
   title: string;
   icon: any;
 }> = [
-  { step: 1, stageId: "OPEND_CONNECT", title: "MooMoo OpenD 持仓", icon: Activity },
-  { step: 2, stageId: "NEWS_SEARCH", title: "SearXNG 全网资讯", icon: Search },
-  { step: 3, stageId: "CONTEXT_ASSEMBLE", title: "单股票知识图谱", icon: Layers },
-  { step: 4, stageId: "GUARDRAIL_CALIBRATE", title: "前次推演与走势复盘", icon: History },
-  { step: 5, stageId: "AI_DEDUCTION", title: "Ollama LLM 推理", icon: Bot },
+  { step: 1, stageId: "OPEND_CONNECT", title: "OpenD 持仓连通", icon: Activity },
+  { step: 2, stageId: "MACRO_SEARCH", title: "全网宏观与热门搜刮", icon: Search },
+  { step: 3, stageId: "CANDIDATE_ASSEMBLE", title: "合成候选股票池", icon: Layers },
+  { step: 4, stageId: "STOCK_DEEP_SEARCH", title: "单标的消歧多维挖掘", icon: Search },
+  { step: 5, stageId: "MAP_REDUCE_DEDUCTION", title: "Map-Reduce 分段 LLM", icon: Bot },
   { step: 6, stageId: "FINISHED", title: "精确定量指南生成", icon: Sparkles },
 ];
 

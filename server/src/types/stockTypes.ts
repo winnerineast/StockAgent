@@ -63,12 +63,31 @@ export interface TotalPnLState {
   recentlyClearedPositions?: PositionPnLItem[];
 }
 
+export interface StockFundamentals {
+  symbol: string;
+  companyName?: string;
+  peRatio?: number;
+  revenueGrowthPct?: number;
+  netMarginPct?: number;
+  debtToEquity?: number;
+  nextEarningsDate?: string;
+  fundamentalSummary?: string;
+}
+
+export interface CapitalFlowItem {
+  trend: "INFLOW" | "OUTFLOW" | "NEUTRAL";
+  description: string;
+  netInflowAmount?: string;
+}
+
 export interface KnowledgeGraphEntityNode {
   id: string;
   name: string;
   type: "ROOT_STOCK" | "SUPPLIER" | "CLIENT" | "COMPETITOR" | "MACRO" | "CONCEPT";
   marketSymbol?: string;
   description?: string;
+  recencyWeight?: number; // 0.0 - 1.0 time decay factor
+  createdAt?: string;
 }
 
 export interface KnowledgeGraphRelationEdge {
@@ -76,6 +95,8 @@ export interface KnowledgeGraphRelationEdge {
   target: string;
   relation: string;
   impact: "POSITIVE" | "NEGATIVE" | "NEUTRAL";
+  recencyWeight?: number; // 0.0 - 1.0 time decay factor
+  createdAt?: string;
 }
 
 export interface StockKnowledgeGraphItem {
@@ -88,6 +109,7 @@ export interface StockKnowledgeGraphItem {
   newsCatalysts: string[];
   actionAdvice: "BUY" | "SELL" | "HOLD" | "TRIM";
   guidanceText: string;
+  compressedSummary?: string;
 }
 
 export interface PastDeductionRetroPerStock {
@@ -102,26 +124,32 @@ export interface PastDeductionRetroPerStock {
 }
 
 export interface CommunitySentimentItem {
-  score: number; // 0 - 100 (e.g. 78)
-  mood: "BULLISH" | "BEARISH" | "NEUTRAL";
+  score?: number; // 0 - 100
+  mood: "BULLISH" | "BEARISH" | "NEUTRAL" | "UNKNOWN";
   keyTopics: string[];
+}
+
+export interface SingleStockIntel {
+  symbol: string;
+  companyName?: string;
+  latestNews: string[];
+  communitySentiment: CommunitySentimentItem;
+  capitalFlow: CapitalFlowItem;
+  fundamentals?: StockFundamentals;
 }
 
 export interface StockDeductionRetroItem {
   symbol: string;
   companyName?: string;
   isCleared?: boolean;
-  // 1. 每一只股票的知识图谱
+  candidateCategory?: "EXISTING_HOLDING" | "WATCHLIST" | "MACRO_CANDIDATE";
   knowledgeGraph: StockKnowledgeGraphItem;
-  // 2. 股票最新消息
   latestNews: string[];
-  // 3. 社区讨论与市场情绪
   communitySentiment?: CommunitySentimentItem;
-  // 4. 持仓情况
+  capitalFlow?: CapitalFlowItem;
+  fundamentals?: StockFundamentals;
   position?: StockPositionItem;
-  // 5. 之前推演这只股票以及实际盘面变化的复盘
   pastRetro: PastDeductionRetroPerStock;
-  // 当前推演建议
   currentRecommendation?: ActionItem;
 }
 
@@ -130,11 +158,10 @@ export interface StrategyProgressStage {
   totalSteps: number;
   stageId:
     | "OPEND_CONNECT"
-    | "QUOTES_FETCH"
-    | "NEWS_SEARCH"
-    | "CONTEXT_ASSEMBLE"
-    | "AI_DEDUCTION"
-    | "GUARDRAIL_CALIBRATE"
+    | "MACRO_SEARCH"
+    | "CANDIDATE_ASSEMBLE"
+    | "STOCK_DEEP_SEARCH"
+    | "MAP_REDUCE_DEDUCTION"
     | "FINISHED";
   title: string;
   detail: string;
@@ -143,8 +170,8 @@ export interface StrategyProgressStage {
 }
 
 export interface RetroPnLResult {
-  accuracyScore: number;
-  executionMatchRate: number;
+  accuracyScore?: number; // undefined if no prior history
+  executionMatchRate?: number;
   avoidedLoss: number;
   totalRealizedPnL: number;
   summaryText: string;
@@ -163,4 +190,3 @@ export interface DailyAllocationOutput {
   recentlyClearedPositions?: StockPositionItem[];
   narrativeReport: string;
 }
-

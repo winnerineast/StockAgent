@@ -55,19 +55,20 @@ model PortfolioSnapshot {
 }
 
 model DailyStrategy {
-  id                 String         @id @default(uuid())
-  portfolioId        String
-  strategyDate       String         // YYYY-MM-DD
-  marketOverview     String
-  existingGuidance   String?
-  newGuidance        String?
-  actionsJson        String         // JSON list of ActionItems (BUY, SELL, TRIM, HOLD)
-  riskAlertsJson     String         // JSON list of RiskAlerts
-  retroPnLScore      Float?         // Evaluated accuracy score (0-100)
-  createdAt          DateTime       @default(now())
+  id                    String         @id @default(uuid())
+  portfolioId           String
+  strategyDate          String         // YYYY-MM-DD
+  marketOverview        String
+  existingGuidance      String?
+  newGuidance           String?
+  actionsJson           String         // JSON list of ActionItems (BUY, SELL, TRIM, HOLD)
+  riskAlertsJson        String         // JSON list of RiskAlerts
+  deductionPipelineJson String?        // JSON representation of LLM prompts, input contexts, and raw outputs
+  retroPnLScore         Float?         // Evaluated accuracy score (0-100)
+  createdAt             DateTime       @default(now())
 
-  portfolio          StockPortfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
-  retrospectives     StrategyRetrospective[]
+  portfolio             StockPortfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  retrospectives        StrategyRetrospective[]
 }
 
 model StrategyRetrospective {
@@ -90,16 +91,31 @@ model StrategyRetrospective {
 model StockKnowledgeGraphStore {
   id                String         @id @default(uuid())
   portfolioId       String
-  symbol            String         // Stock symbol (e.g. AAPL, NVDA)
+  symbol            String         // Stock symbol
   nodesJson         String         // JSON array of KnowledgeGraphEntityNode
   edgesJson         String         // JSON array of KnowledgeGraphRelationEdge
   newsCatalystsJson String         // JSON array of news catalyst strings
   guidanceText      String?
+  compressedSummary String?        // Distilled long-term memory summary after decay/forgetting
+  lastCompressedAt  DateTime?
   updatedAt         DateTime       @updatedAt
 
   portfolio         StockPortfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
 
   @@unique([portfolioId, symbol])
+}
+
+model StockFundamentalsStore {
+  id                 String   @id @default(uuid())
+  symbol             String   @unique
+  companyName        String?
+  peRatio            Float?
+  revenueGrowthPct   Float?
+  netMarginPct       Float?
+  debtToEquity       Float?
+  nextEarningsDate   String?
+  fundamentalSummary String?
+  updatedAt          DateTime @updatedAt
 }
 
 model StockMarketIntelCache {
@@ -111,3 +127,4 @@ model StockMarketIntelCache {
   source    String
   createdAt DateTime @default(now())
 }
+

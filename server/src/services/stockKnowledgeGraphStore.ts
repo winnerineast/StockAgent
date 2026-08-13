@@ -1,9 +1,70 @@
 import { prisma } from "../db/prisma";
-import { StockKnowledgeGraphItem, KnowledgeGraphEntityNode, KnowledgeGraphRelationEdge } from "../types/stockTypes";
+import {
+  StockKnowledgeGraphItem,
+  KnowledgeGraphEntityNode,
+  KnowledgeGraphRelationEdge,
+  StockFundamentals,
+} from "../types/stockTypes";
 
 export class StockKnowledgeGraphStoreService {
   /**
-   * 从数据库获取特定股票代码 (Symbol) 的专属操盘知识图谱
+   * 从数据库获取特定股票基本面/财报指标
+   */
+  public async getFundamentals(symbol: string): Promise<StockFundamentals | null> {
+    const symbolUpper = symbol.toUpperCase();
+    try {
+      const record = await prisma.stockFundamentalsStore.findUnique({
+        where: { symbol: symbolUpper },
+      });
+      if (record) {
+        return {
+          symbol: record.symbol,
+          companyName: record.companyName || record.symbol,
+          peRatio: record.peRatio ?? undefined,
+          revenueGrowthPct: record.revenueGrowthPct ?? undefined,
+          netMarginPct: record.netMarginPct ?? undefined,
+          debtToEquity: record.debtToEquity ?? undefined,
+          nextEarningsDate: record.nextEarningsDate ?? undefined,
+          fundamentalSummary: record.fundamentalSummary ?? undefined,
+        };
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  /**
+   * 落库/更新特定股票的基本面财报数据
+   */
+  public async upsertFundamentals(fundamentals: StockFundamentals): Promise<void> {
+    const symbolUpper = fundamentals.symbol.toUpperCase();
+    try {
+      await prisma.stockFundamentalsStore.upsert({
+        where: { symbol: symbolUpper },
+        create: {
+          symbol: symbolUpper,
+          companyName: fundamentals.companyName || symbolUpper,
+          peRatio: fundamentals.peRatio,
+          revenueGrowthPct: fundamentals.revenueGrowthPct,
+          netMarginPct: fundamentals.netMarginPct,
+          debtToEquity: fundamentals.debtToEquity,
+          nextEarningsDate: fundamentals.nextEarningsDate,
+          fundamentalSummary: fundamentals.fundamentalSummary,
+        },
+        update: {
+          companyName: fundamentals.companyName || symbolUpper,
+          peRatio: fundamentals.peRatio,
+          revenueGrowthPct: fundamentals.revenueGrowthPct,
+          netMarginPct: fundamentals.netMarginPct,
+          debtToEquity: fundamentals.debtToEquity,
+          nextEarningsDate: fundamentals.nextEarningsDate,
+          fundamentalSummary: fundamentals.fundamentalSummary,
+        },
+      });
+    } catch (e) {}
+  }
+
+  /**
+   * 从数据库获取特定股票代码 (Symbol) 的专属操盘知识图谱，并执行时效衰减计算
    */
   public async getKnowledgeGraph(portfolioId: string, symbol: string): Promise<StockKnowledgeGraphItem | null> {
     const symbolUpper = symbol.toUpperCase();
@@ -28,37 +89,79 @@ export class StockKnowledgeGraphStoreService {
     try { edges = JSON.parse(record.edgesJson || "[]"); } catch (e) {}
     try { newsCatalysts = JSON.parse(record.newsCatalystsJson || "[]"); } catch (e) {}
 
+    // 计算时效衰减 (Recency Weighting)
+    const decayedNodes = this.applyRecencyDecayToNodes(nodes);
+    const decayedEdges = this.applyRecencyDecayToEdges(edges);
+
     return {
       symbol: symbolUpper,
       companyName: symbolUpper,
       positionCategory: "EXISTING",
       industrySector: "股票知识图谱实体网络",
-      nodes,
-      edges,
+      nodes: decayedNodes,
+      edges: decayedEdges,
       newsCatalysts,
       actionAdvice: "HOLD",
       guidanceText: record.guidanceText || `已加载 ${symbolUpper} 专属操盘知识图谱`,
+      compressedSummary: record.compressedSummary ?? undefined,
     };
   }
 
   /**
-   * 生成默认股票图谱节点（包含 Root, Supplier, Competitor, Macro 节点）
+   * 时效衰减计算 (最新信息 1.0 > 30天 0.6 > 90天 0.2)
+   */
+  private applyRecencyDecayToNodes(nodes: KnowledgeGraphEntityNode[]): KnowledgeGraphEntityNode[] {
+    const now = Date.now();
+    return nodes.map((n) => {
+      const createdTime = n.createdAt ? new Date(n.createdAt).getTime() : now;
+      const daysDiff = Math.max(0, (now - createdTime) / (1000 * 60 * 60 * 24));
+      let recencyWeight = 1.0;
+      if (daysDiff > 90) recencyWeight = 0.2;
+      else if (daysDiff > 30) recencyWeight = 0.6;
+      else if (daysDiff > 7) recencyWeight = 0.85;
+
+      return {
+        ...n,
+        recencyWeight: Number(recencyWeight.toFixed(2)),
+      };
+    });
+  }
+
+  private applyRecencyDecayToEdges(edges: KnowledgeGraphRelationEdge[]): KnowledgeGraphRelationEdge[] {
+    const now = Date.now();
+    return edges.map((e) => {
+      const createdTime = e.createdAt ? new Date(e.createdAt).getTime() : now;
+      const daysDiff = Math.max(0, (now - createdTime) / (1000 * 60 * 60 * 24));
+      let recencyWeight = 1.0;
+      if (daysDiff > 90) recencyWeight = 0.2;
+      else if (daysDiff > 30) recencyWeight = 0.6;
+
+      return {
+        ...e,
+        recencyWeight: Number(recencyWeight.toFixed(2)),
+      };
+    });
+  }
+
+  /**
+   * 生成默认股票图谱节点（包含 Root, Supplier, Competitor, Macro 节点，带真实 timestamp）
    */
   public buildDefaultKnowledgeGraph(symbol: string): StockKnowledgeGraphItem {
     const s = symbol.toUpperCase();
+    const nowIso = new Date().toISOString();
     const nodes: KnowledgeGraphEntityNode[] = [
-      { id: s, name: `${s} 主主体`, type: "ROOT_STOCK", marketSymbol: s, description: "核心美股标的资产" },
-      { id: `${s}_SUPPLIER`, name: `${s} 关键供应链`, type: "SUPPLIER", description: "主要上游芯片/软硬件及材料供应商" },
-      { id: `${s}_COMPETITOR`, name: `${s} 行业竞品`, type: "COMPETITOR", description: "主要同业竞争品牌与替代品" },
-      { id: "FED_POLICY", name: "美联储利率决议", type: "MACRO", description: "Macro 利率环境与流动性影响" },
-      { id: "AI_CATALYST", name: "AI 资本开支与算力需求", type: "CONCEPT", description: "行业核心概念与估值驱动力" },
+      { id: s, name: `${s} 主主体`, type: "ROOT_STOCK", marketSymbol: s, description: "核心美股标的资产", recencyWeight: 1.0, createdAt: nowIso },
+      { id: `${s}_SUPPLIER`, name: `${s} 关键供应链`, type: "SUPPLIER", description: "主要上游芯片/软硬件及材料供应商", recencyWeight: 1.0, createdAt: nowIso },
+      { id: `${s}_COMPETITOR`, name: `${s} 行业竞品`, type: "COMPETITOR", description: "主要同业竞争品牌与替代品", recencyWeight: 1.0, createdAt: nowIso },
+      { id: "FED_POLICY", name: "美联储利率决议", type: "MACRO", description: "Macro 利率环境与流动性影响", recencyWeight: 1.0, createdAt: nowIso },
+      { id: "AI_CATALYST", name: "AI 资本开支与算力需求", type: "CONCEPT", description: "行业核心概念与估值驱动力", recencyWeight: 1.0, createdAt: nowIso },
     ];
 
     const edges: KnowledgeGraphRelationEdge[] = [
-      { source: `${s}_SUPPLIER`, target: s, relation: "供应关键核心零部件", impact: "POSITIVE" },
-      { source: `${s}_COMPETITOR`, target: s, relation: "产品同质化争夺市场份额", impact: "NEGATIVE" },
-      { source: "FED_POLICY", target: s, relation: "降息预期提升估值中枢", impact: "POSITIVE" },
-      { source: "AI_CATALYST", target: s, relation: "拉动业绩与 PE 乘数放大", impact: "POSITIVE" },
+      { source: `${s}_SUPPLIER`, target: s, relation: "供应关键核心零部件", impact: "POSITIVE", recencyWeight: 1.0, createdAt: nowIso },
+      { source: `${s}_COMPETITOR`, target: s, relation: "产品同质化争夺市场份额", impact: "NEGATIVE", recencyWeight: 1.0, createdAt: nowIso },
+      { source: "FED_POLICY", target: s, relation: "降息预期提升估值中枢", impact: "POSITIVE", recencyWeight: 1.0, createdAt: nowIso },
+      { source: "AI_CATALYST", target: s, relation: "拉动业绩与 PE 乘数放大", impact: "POSITIVE", recencyWeight: 1.0, createdAt: nowIso },
     ];
 
     return {
@@ -68,14 +171,40 @@ export class StockKnowledgeGraphStoreService {
       industrySector: "科技与半导体",
       nodes,
       edges,
-      newsCatalysts: [`${s} 发布最新季度财报及指引`, `SearXNG 搜索到的最新行业催化剂`],
+      newsCatalysts: [],
       actionAdvice: "HOLD",
-      guidanceText: `${s} 知识图谱已构建，包含供应链、竞品、宏观与风险节点`,
+      guidanceText: `${s} 知识图谱已动态生成`,
     };
   }
 
   /**
-   * 保存或更新单只股票图谱，并合并用户自定义节点
+   * 图谱记忆遗忘与压缩提纯机制 (Compress and Decay Memory)
+   * 当催化剂新闻多于 5 条或边缘数过多时，蒸馏旧消息为长期实体描述 `compressedSummary`
+   */
+  public async compressAndDecayGraphMemory(portfolioId: string, symbol: string): Promise<void> {
+    const symbolUpper = symbol.toUpperCase();
+    const kg = await this.getKnowledgeGraph(portfolioId, symbolUpper);
+    if (!kg) return;
+
+    const freshCatalysts = kg.newsCatalysts || [];
+    if (freshCatalysts.length > 4) {
+      const olderItems = freshCatalysts.slice(0, freshCatalysts.length - 3);
+      const recentItems = freshCatalysts.slice(freshCatalysts.length - 3);
+      const distilledSummary = `[历史事件记忆提纯]: ${olderItems.join("; ").slice(0, 200)}`;
+
+      await prisma.stockKnowledgeGraphStore.update({
+        where: { portfolioId_symbol: { portfolioId, symbol: symbolUpper } },
+        data: {
+          newsCatalystsJson: JSON.stringify(recentItems),
+          compressedSummary: distilledSummary,
+          lastCompressedAt: new Date(),
+        },
+      });
+    }
+  }
+
+  /**
+   * 保存或更新单只股票图谱，并合并自定义节点
    */
   public async upsertKnowledgeGraph(portfolioId: string, item: StockKnowledgeGraphItem): Promise<void> {
     const symbolUpper = item.symbol.toUpperCase();
@@ -117,19 +246,21 @@ export class StockKnowledgeGraphStoreService {
         edgesJson: JSON.stringify(mergedEdges),
         newsCatalystsJson: JSON.stringify(item.newsCatalysts || []),
         guidanceText: item.guidanceText,
+        compressedSummary: item.compressedSummary,
       },
       update: {
         nodesJson: JSON.stringify(mergedNodes),
         edgesJson: JSON.stringify(mergedEdges),
         newsCatalystsJson: JSON.stringify(item.newsCatalysts || []),
         guidanceText: item.guidanceText,
+        compressedSummary: item.compressedSummary,
       },
     });
+
+    // 触发概率性/阈值记忆压缩
+    await this.compressAndDecayGraphMemory(portfolioId, symbolUpper);
   }
 
-  /**
-   * 手动添加用户自定义实体与关联边
-   */
   public async addCustomEntityToDb(
     portfolioId: string,
     symbol: string,

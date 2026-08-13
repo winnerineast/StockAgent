@@ -4,12 +4,28 @@ import { moomooAdapter } from "./moomooAdapter";
 import { searxngSearchService } from "./searxngSearchService";
 import { stockKnowledgeGraphStoreService } from "./stockKnowledgeGraphStore";
 import { stockEngine } from "./stockEngine";
-import { ollamaService, OllamaDeductionResult } from "./ollamaService";
+import { ollamaService } from "./ollamaService";
 import { computeTotalPnL, computeRetroPnL, savePortfolioSnapshot } from "./stockMemoryManager";
-import { DailyAllocationOutput, StockPositionItem, StrategyProgressStage, StockDeductionRetroItem } from "../types/stockTypes";
+import {
+  DailyAllocationOutput,
+  StockPositionItem,
+  StrategyProgressStage,
+  StockDeductionRetroItem,
+  SingleStockIntel,
+  ActionItem,
+} from "../types/stockTypes";
 
 export class DailyStrategyDirector {
   public currentActiveStage: StrategyProgressStage | null = null;
+  public liveDeductionPipeline: {
+    modelUsed: string;
+    promptContextText: string;
+    knowledgeGraphContext: string;
+    searxngNewsContext: string;
+    positionsContext: string;
+    lessonsContext: string;
+    rawOllamaOutput?: string;
+  } | null = null;
 
   public async generateDailyStrategy(
     portfolioId: string = "default-portfolio",
@@ -57,13 +73,11 @@ export class DailyStrategyDirector {
     };
 
     // STEP 1: 确保 OpenD 通道 (OPEND_CONNECT)
-    notifyStage(1, "OPEND_CONNECT", "MooMoo OpenD 持仓", "测试 127.0.0.1:11111 TCP 原生通道同步持仓数据...", 15);
+    notifyStage(1, "OPEND_CONNECT", "MooMoo OpenD 持仓连通", "测试 127.0.0.1:11111 TCP 原生通道拉取真实持仓...", 15);
     const openDCheck = await openDaemonManager.ensureOpenDRunning();
 
-    // STEP 2: 从 OpenD 拉取持仓与自选股 (QUOTES_FETCH)
-    notifyStage(2, "QUOTES_FETCH", "同步 MooMoo 实盘持仓与自选股", "正在拉取最新账号持仓与资金...", 30);
     const openDPortfolio = await moomooAdapter.fetchPortfolioFromOpenD();
-    let watchlistItems = await moomooAdapter.fetchWatchlistFromOpenD();
+    const watchlistItems = await moomooAdapter.fetchWatchlistFromOpenD();
 
     const openDPositions: StockPositionItem[] = openDPortfolio.positions ?? [];
     const openDCash = openDPortfolio.cashBalance ?? 0;
@@ -94,7 +108,6 @@ export class DailyStrategyDirector {
         include: { positions: true },
       });
     } else if (openDPortfolio.fromOpenD && openDPositions.length > 0) {
-      // 同步最新 OpenD 实盘持仓与现金余额至数据库
       await prisma.stockPortfolio.update({
         where: { id: portfolioId },
         data: { cashBalance: openDCash },
@@ -125,34 +138,20 @@ export class DailyStrategyDirector {
       throw new Error("Portfolio not found");
     }
 
-    // STEP 3: 调度 SearXNG 抓取市场新闻催化剂 (NEWS_SEARCH)
-    notifyStage(3, "NEWS_SEARCH", "SearXNG 全网资讯", "正在通过 Docker SearXNG 极速检索全网盘前资讯催化剂...", 45);
-    const allSymbols = Array.from(
-      new Set([
-        ...portfolio.positions.map((p) => p.symbol),
-        ...watchlistItems.map((w) => w.symbol),
-      ])
+    // STEP 2: Phase 1 搜刮美股大盘走向、热点情绪与主流财经媒体 (MACRO_SEARCH)
+    notifyStage(2, "MACRO_SEARCH", "SearXNG 全网宏观与明星板块", "正在从 Bloomberg/CNBC/Reuters 搜刮大盘走向与热点...", 30);
+    const macroRes = await searxngSearchService.searchMacroAndSectorNews();
+
+    // STEP 3: 合成候选股票池 Candidate Stock Pool (CANDIDATE_ASSEMBLE)
+    notifyStage(3, "CANDIDATE_ASSEMBLE", "合成候选股票池", "融合实盘持仓 + 自选股 + 宏观热门推荐...", 45);
+    const holdingSymbols = portfolio.positions.map((p) => p.symbol.toUpperCase());
+    const watchlistSymbols = watchlistItems.map((w) => w.symbol.toUpperCase());
+
+    const candidateSymbols = Array.from(
+      new Set([...holdingSymbols, ...watchlistSymbols])
     );
 
-    let intelResult = await searxngSearchService.fetchAndCacheMarketNews(allSymbols);
-
-    // 严格阻塞守护：SearXNG 必须成功完成网络新闻搜索并返回有效条目，方可向下推进 Step 4 与 Step 5
-    let searxngRetryCount = 0;
-    while ((!intelResult.searxngConnected || intelResult.newsItemsCount === 0) && searxngRetryCount < 6) {
-      searxngRetryCount++;
-      console.log(`[DailyStrategyDirector] 等待 SearXNG 检索最新全网新闻 (第 ${searxngRetryCount}/6 次重试)...`);
-      notifyStage(
-        3,
-        "NEWS_SEARCH",
-        "SearXNG 全网资讯",
-        `SearXNG 正在拉起网络引擎并抓取最新盘前新闻 (第 ${searxngRetryCount}/6 次尝试)...`,
-        45
-      );
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      intelResult = await searxngSearchService.fetchAndCacheMarketNews(allSymbols);
-    }
-
-    const realQuotes = await moomooAdapter.fetchMarketQuotes(allSymbols);
+    const realQuotes = await moomooAdapter.fetchMarketQuotes(candidateSymbols);
     const quotesMap = new Map<string, number>();
     realQuotes.forEach((q) => quotesMap.set(q.symbol.toUpperCase(), q.price));
 
@@ -165,12 +164,14 @@ export class DailyStrategyDirector {
       marketPrice: quotesMap.get(p.symbol.toUpperCase()) || p.marketPrice,
     }));
 
-    // STEP 4: 组装单股票知识图谱 + 历史推演 vs 盘面走势复盘 (CONTEXT_ASSEMBLE)
-    notifyStage(4, "CONTEXT_ASSEMBLE", "单股票知识图谱", "正在同步并组装持仓个股知识图谱与历史复盘...", 65);
+    // STEP 4: 逐标的消歧深度搜刮 (新闻 + 社区情绪 + 大资金动向 + 基本面) (STOCK_DEEP_SEARCH)
+    notifyStage(4, "STOCK_DEEP_SEARCH", "单标的多维独立挖掘", `针对 ${candidateSymbols.length} 只候选标的单独抓取重磅新闻、社区情绪与主力资金...`, 60);
+
+    const candidateStockIntels = new Map<string, SingleStockIntel>();
     const knowledgeGraphList = [];
     const perStockDeductionRetroList: StockDeductionRetroItem[] = [];
 
-    // 获取上一历史策略记录用于单标的走势复盘
+    // 读取前期策略核验对齐
     const prevStrategy = await prisma.dailyStrategy.findFirst({
       where: { portfolioId },
       orderBy: { createdAt: "desc" },
@@ -186,21 +187,23 @@ export class DailyStrategyDirector {
       } catch (e) {}
     }
 
-    // 核心规则：推演与复盘界面仅针对数据库中的真实持仓与已平仓股票
-    const targetPortfolioSymbols = Array.from(
-      new Set(portfolio.positions.map((p) => p.symbol.toUpperCase()))
-    );
-
     let symbolIndex = 0;
-    for (const sym of targetPortfolioSymbols) {
+    for (const sym of candidateSymbols) {
       symbolIndex++;
       notifyStage(
         4,
-        "CONTEXT_ASSEMBLE",
-        "单股票知识图谱",
-        `正在构建 [${sym}] 操盘知识图谱与盘面复盘 (${symbolIndex}/${targetPortfolioSymbols.length})...`,
-        65 + Math.floor((symbolIndex / targetPortfolioSymbols.length) * 15)
+        "STOCK_DEEP_SEARCH",
+        "单标的多维独立挖掘",
+        `正在对 [${sym}] 执行多义词消歧搜索与大资金/社区情绪抓取 (${symbolIndex}/${candidateSymbols.length})...`,
+        60 + Math.floor((symbolIndex / candidateSymbols.length) * 20)
       );
+
+      const pos = currentPositions.find((p) => p.symbol.toUpperCase() === sym);
+      const companyName = pos?.companyName || watchlistItems.find((w) => w.symbol.toUpperCase() === sym)?.companyName || sym;
+
+      const intel = await searxngSearchService.searchSingleStockIntel(sym, companyName);
+      candidateStockIntels.set(sym, intel);
+
       let kgItem = await stockKnowledgeGraphStoreService.getKnowledgeGraph(portfolioId, sym);
       if (!kgItem) {
         kgItem = stockKnowledgeGraphStoreService.buildDefaultKnowledgeGraph(sym);
@@ -208,118 +211,80 @@ export class DailyStrategyDirector {
       await stockKnowledgeGraphStoreService.upsertKnowledgeGraph(portfolioId, kgItem);
       knowledgeGraphList.push(kgItem);
 
-      // 单股票消息
-      const symNews = (intelResult.intelCache[sym] || []).map((n) => n.title || n.snippet || "");
-      // 单股票持仓
-      const pos = currentPositions.find((p) => p.symbol.toUpperCase() === sym.toUpperCase());
+      const fundamentals = await stockKnowledgeGraphStoreService.getFundamentals(sym);
       const isClearedPos = !pos || pos.shares <= 0;
+      const prevAction = prevActionsMap.get(sym);
+      const currentPrice = quotesMap.get(sym) || pos?.marketPrice || 0;
 
-      // 4. 之前推演这只股票以及实际盘面变化的复盘
-      const prevAction = prevActionsMap.get(sym.toUpperCase());
-      const currentPrice = quotesMap.get(sym.toUpperCase()) || pos?.marketPrice || 0;
       let pastRetroText = prevAction
-        ? ""
+        ? `针对上次建议 (${prevAction.action}) 对照：当前现价 $${currentPrice.toFixed(2)}。`
         : isClearedPos
-        ? `[${sym}] 既往已平仓离场，现价走势盘整。`
-        : `[${sym}] 首次纳入持仓推演，暂无前期历史推演基准。`;
-      let accuracy: number | undefined = undefined;
+        ? `[${sym}] 既往已平仓离场，现价 $${currentPrice.toFixed(2)}。`
+        : `[${sym}] 首次纳入候选推演，暂无前期历史基准。`;
 
-      if (prevAction) {
-        const estP = prevAction.estimatedPrice || currentPrice;
-        const diffPct = (((currentPrice - estP) / estP) * 100).toFixed(1);
-        if (prevAction.action === "BUY" && currentPrice >= estP) {
-          pastRetroText = `前次推演建议在 $${estP} 加仓建仓，实盘上涨 ${diffPct}%，多头验证成功。`;
-          accuracy = 92.0;
-        } else if (prevAction.action === "TRIM" && currentPrice <= estP) {
-          pastRetroText = `前次推演建议在 $${estP} 减仓落袋，实盘回调 ${diffPct}%，成功规避追高回调损失。`;
-          accuracy = 90.0;
-        } else if (prevAction.action === "SELL") {
-          pastRetroText = `前次建议清仓离场，实盘价格继续盘整，成功锁定利润防范下行。`;
-          accuracy = 94.0;
-        } else {
-          pastRetroText = `前次建议 ${prevAction.action}，现价 $${currentPrice.toFixed(2)} 较目标浮动 ${diffPct}%。`;
-          accuracy = 85.0;
-        }
-      }
+      const candidateCategory: StockDeductionRetroItem["candidateCategory"] = holdingSymbols.includes(sym)
+        ? "EXISTING_HOLDING"
+        : watchlistSymbols.includes(sym)
+        ? "WATCHLIST"
+        : "MACRO_CANDIDATE";
 
       perStockDeductionRetroList.push({
         symbol: sym,
-        companyName: kgItem.companyName || sym,
+        companyName,
         isCleared: isClearedPos,
-        knowledgeGraph: {
-          ...kgItem,
-          positionCategory: isClearedPos ? "CLEARED" : "EXISTING",
-        },
-        latestNews: symNews.slice(0, 3),
-        communitySentiment: symNews.length > 0 ? {
-          score: 80,
-          mood: "BULLISH",
-          keyTopics: symNews.slice(0, 3),
-        } : undefined,
+        candidateCategory,
+        knowledgeGraph: kgItem,
+        latestNews: intel.latestNews,
+        communitySentiment: intel.communitySentiment,
+        capitalFlow: intel.capitalFlow,
+        fundamentals: fundamentals ?? undefined,
         position: pos
           ? { ...pos, isCleared: isClearedPos }
-          : { symbol: sym, companyName: sym, shares: 0, costBasis: currentPrice, marketPrice: currentPrice, isCleared: true },
+          : { symbol: sym, companyName, shares: 0, costBasis: currentPrice, marketPrice: currentPrice, isCleared: true },
         pastRetro: {
           lastStrategyDate: prevStrategy?.strategyDate,
           lastAction: prevAction?.action || (isClearedPos ? "SELL" : "HOLD"),
-          lastTargetPrice: prevAction?.targetPrice && prevAction.targetPrice > currentPrice
-            ? prevAction.targetPrice
-            : currentPrice > 0 ? Number((currentPrice * 1.12).toFixed(2)) : undefined,
-          lastStopLossPrice: prevAction?.stopLossPrice && prevAction.stopLossPrice < currentPrice
-            ? prevAction.stopLossPrice
-            : currentPrice > 0 ? Number((currentPrice * 0.90).toFixed(2)) : undefined,
+          lastTargetPrice: prevAction?.targetPrice,
+          lastStopLossPrice: prevAction?.stopLossPrice,
           actualPriceAction: pastRetroText,
           pnlImpact: pos ? (currentPrice - pos.costBasis) * pos.shares : 0,
-          accuracyScore: accuracy,
-          distilledLesson: prevAction ? `[${sym}] 严格遵守知识图谱上下游防线与 SearXNG 消息催化时效。` : undefined,
         },
       });
     }
 
-    const retroPnL = await computeRetroPnL(portfolioId);
+    const retroPnL = await computeRetroPnL(portfolioId, prevStrategy?.id, quotesMap);
 
-    // STEP 5: Ollama 大模型 / 规则引擎推理 (AI_DEDUCTION)
-    notifyStage(5, "AI_DEDUCTION", "硬件自适应 Ollama 推理完整 Context", "融合 4 大要素（图谱+新闻+持仓+历史走势复盘）...", 85);
+    // STEP 5: Map-Reduce 多阶段 LLM 推理 (MAP_REDUCE_DEDUCTION)
+    notifyStage(5, "MAP_REDUCE_DEDUCTION", "Map-Reduce 分段大模型推理", "执行 Stage A (宏观) -> Stage B (单标的 Map) 分段推理...", 85);
     const ollamaCheck = await ollamaService.getStatus();
 
     let screenerRes: {
-      actions: any[];
-      oversoldOpportunities?: any[];
+      actions: ActionItem[];
+      oversoldOpportunities?: ActionItem[];
       riskAlerts: any[];
       marketOverview: string;
     };
 
-    const promptPayload = ollamaService.buildPromptPayload({
-      positions: currentPositions,
-      watchlist: watchlistItems,
-      quotesMap,
-      searxngNewsText: intelResult.rawNewsText,
-      knowledgeGraphs: knowledgeGraphList,
-      lessonsLearned: retroPnL.lessonsLearned,
-      totalBudget: budgetToUse,
-      cashBalance: portfolio.cashBalance,
-      riskPreference: portfolio.riskPreference,
-    });
-
     let deductionPipeline = {
-      modelUsed: ollamaModel || "Ollama / RuleEngine",
-      promptContextText: promptPayload.promptText,
-      knowledgeGraphContext: promptPayload.kgContextText,
-      searxngNewsContext: promptPayload.searxngNewsText,
-      positionsContext: promptPayload.positionsText,
-      lessonsContext: promptPayload.lessonsText,
+      modelUsed: ollamaModel || "Ollama / Map-Reduce Engine",
+      promptContextText: `[Candidate Pool Size: ${candidateSymbols.length}]`,
+      knowledgeGraphContext: `${knowledgeGraphList.length} 标的图谱已装载`,
+      searxngNewsContext: macroRes.rawNewsText,
+      positionsContext: `${currentPositions.length} 笔实盘持仓`,
+      lessonsContext: `${retroPnL.lessonsLearned.length} 条反思教训`,
       rawOllamaOutput: "",
     };
 
     if (ollamaCheck.connected && ollamaCheck.models.length > 0) {
       const modelToUse = ollamaModel || ollamaCheck.recommendedModel || ollamaCheck.models[0];
       try {
-        console.log(`[DailyStrategyDirector] 调用 Ollama 推荐模型 (${modelToUse}) 推理...`);
-        const ollamaRes: OllamaDeductionResult = await ollamaService.generateStrategyWithOllama(modelToUse, {
+        console.log(`[DailyStrategyDirector] 执行 Map-Reduce 分段推理 (${modelToUse})...`);
+        const ollamaRes = await ollamaService.generateStrategyWithOllama(modelToUse, {
           positions: currentPositions,
-          watchlist: watchlistItems,
+          candidateSymbols,
+          candidateStockIntels,
           quotesMap,
-          searxngNewsText: intelResult.rawNewsText,
+          searxngNewsText: macroRes.rawNewsText,
           knowledgeGraphs: knowledgeGraphList,
           lessonsLearned: retroPnL.lessonsLearned,
           totalBudget: budgetToUse,
@@ -327,7 +292,13 @@ export class DailyStrategyDirector {
           riskPreference: portfolio.riskPreference,
         });
 
-        screenerRes = ollamaRes;
+        screenerRes = {
+          actions: ollamaRes.actions,
+          riskAlerts: ollamaRes.riskAlerts,
+          marketOverview: ollamaRes.marketOverview,
+          oversoldOpportunities: ollamaRes.actions.filter((a) => a.action === "BUY"),
+        };
+
         deductionPipeline = {
           modelUsed: ollamaRes.modelUsed,
           promptContextText: ollamaRes.promptText,
@@ -343,11 +314,11 @@ export class DailyStrategyDirector {
           currentPositions,
           watchlistItems,
           quotesMap,
-          intelResult.rawNewsText,
+          macroRes.rawNewsText,
           budgetToUse,
           portfolio.riskPreference
         );
-        deductionPipeline.modelUsed = `量化规则引擎 (RuleEngine Fallback: ${err.message})`;
+        deductionPipeline.modelUsed = `量化规则引擎 (Fallback: ${err.message})`;
         deductionPipeline.rawOllamaOutput = JSON.stringify(screenerRes, null, 2);
       }
     } else {
@@ -355,15 +326,15 @@ export class DailyStrategyDirector {
         currentPositions,
         watchlistItems,
         quotesMap,
-        intelResult.rawNewsText,
+        macroRes.rawNewsText,
         budgetToUse,
         portfolio.riskPreference
       );
-      deductionPipeline.modelUsed = "量化规则引擎 (Ollama未连通/无模型)";
+      deductionPipeline.modelUsed = "量化规则引擎 (Ollama 离线)";
       deductionPipeline.rawOllamaOutput = JSON.stringify(screenerRes, null, 2);
     }
 
-    // 将推演出的 Action 绑回 perStockDeductionRetroList
+    // 将推演建议动作绑回列表
     screenerRes.actions.forEach((act) => {
       const target = perStockDeductionRetroList.find((item) => item.symbol.toUpperCase() === act.symbol.toUpperCase());
       if (target) {
@@ -371,8 +342,10 @@ export class DailyStrategyDirector {
       }
     });
 
-    // STEP 6: 时间序列落库与前一日复盘 (GUARDRAIL_CALIBRATE & FINISHED)
-    notifyStage(6, "GUARDRAIL_CALIBRATE", "策略与单股票复盘知识落库", "保存时间序列快照与策略对齐...", 95);
+    this.liveDeductionPipeline = deductionPipeline;
+
+    // STEP 6: 时间序列快照落库与终态落库 (FINISHED)
+    notifyStage(6, "FINISHED", "策略落库与全要素构建完毕", "完成 2 阶段搜刮、候选池分段推演与复盘核验", 100);
     const todayStr = new Date().toISOString().split("T")[0];
     const totalPnLState = computeTotalPnL(currentPositions, portfolio.cashBalance);
     await savePortfolioSnapshot(portfolioId, todayStr, totalPnLState);
@@ -382,10 +355,11 @@ export class DailyStrategyDirector {
         portfolioId,
         strategyDate: todayStr,
         marketOverview: screenerRes.marketOverview,
-        existingGuidance: "基于 Ollama 融合复盘与知识图谱的开盘指引",
-        newGuidance: "择优在关键支撑位分批挂单建仓",
+        existingGuidance: "基于 SearXNG 消歧搜刮与 Map-Reduce 分段推理的开盘指南",
+        newGuidance: "严格遵从止盈止损防线分批建仓",
         actionsJson: JSON.stringify(screenerRes.actions),
         riskAlertsJson: JSON.stringify(screenerRes.riskAlerts),
+        deductionPipelineJson: JSON.stringify(deductionPipeline),
         retroPnLScore: retroPnL.accuracyScore,
       },
     });
@@ -395,16 +369,14 @@ export class DailyStrategyDirector {
         portfolioId,
         strategyId: strategyRecord.id,
         retroDate: todayStr,
-        accuracyScore: retroPnL.accuracyScore,
-        executionMatchRate: retroPnL.executionMatchRate,
+        accuracyScore: retroPnL.accuracyScore ?? 0,
+        executionMatchRate: retroPnL.executionMatchRate ?? 100,
         avoidedLoss: retroPnL.avoidedLoss,
         totalRealizedPnL: retroPnL.totalRealizedPnL,
         summaryText: retroPnL.summaryText,
         lessonsLearnedJson: JSON.stringify(retroPnL.lessonsLearned),
       },
     });
-
-    notifyStage(6, "FINISHED", "推演与复盘融合分析完毕", "已构建单股票 4 大核心推演复盘体系", 100);
 
     const searxngCheck = await searxngSearchService.getStatus();
 
@@ -417,13 +389,13 @@ export class DailyStrategyDirector {
       deductionPipeline,
       output: {
         marketOverview: screenerRes.marketOverview,
-        existingPositionGuidance: "严格执行盘前风控止损与阶梯止盈建议",
-        newPositionGuidance: "优先选择低估值且带 SearXNG 催化剂标的分批建仓",
+        existingPositionGuidance: "严格执行盘前风控止损与阶梯止盈防线",
+        newPositionGuidance: "结合大资金走向与 SearXNG 消歧新闻择优建仓",
         actions: screenerRes.actions,
         riskAlerts: screenerRes.riskAlerts,
         knowledgeGraph: knowledgeGraphList,
         perStockDeductionRetro: perStockDeductionRetroList,
-        narrativeReport: `### 操盘分析报告 (${todayStr})\n\n${screenerRes.marketOverview}\n\n#### 盘前风控纪律\n- 规避开盘前 10 分钟盲目追高\n- 维持总仓位在预算警戒线以内`,
+        narrativeReport: `### 操盘分析报告 (${todayStr})\n\n${screenerRes.marketOverview}`,
       },
       retroPnL,
     };

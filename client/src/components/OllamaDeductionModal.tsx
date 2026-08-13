@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   Sparkles,
   PieChart,
+  History,
 } from "lucide-react";
 
 interface PipelineData {
@@ -27,29 +28,39 @@ interface OllamaDeductionModalProps {
   isOpen: boolean;
   onClose: () => void;
   pipelineData: PipelineData | null;
+  strategyHistory?: any[];
 }
 
 export const OllamaDeductionModal: React.FC<OllamaDeductionModalProps> = ({
   isOpen,
   onClose,
   pipelineData,
+  strategyHistory = [],
 }) => {
   const [activeTab, setActiveTab] = useState<
     "prompt" | "kg" | "news" | "positions" | "output"
   >("prompt");
+  const [selectedHistoryIndex, setSelectedHistoryIndex] = useState<number>(-1);
   const [copied, setCopied] = useState(false);
 
   if (!isOpen) return null;
 
-  const activeData = pipelineData || {
-    modelUsed: "Ollama",
-    promptContextText: "==== Ollama 上下文 Prompt 正在组装中 ====\n(包含：单股票操盘知识图谱 + SearXNG 盘前新闻 + MooMoo 持仓与资金 + 历史走势复盘)",
-    knowledgeGraphContext: "知识图谱上下文装载中...",
-    searxngNewsContext: "SearXNG 实时新闻抓取中...",
-    positionsContext: "MooMoo 持仓明细同步中...",
-    lessonsContext: "历史风控教训加载中...",
-    rawOllamaOutput: "等待 Ollama 大模型响应生成...",
-  };
+  // 如果选择历史记录
+  const selectedHistory = selectedHistoryIndex >= 0 && strategyHistory[selectedHistoryIndex]
+    ? strategyHistory[selectedHistoryIndex]
+    : null;
+
+  const activeData: PipelineData = (selectedHistory && selectedHistory.deductionPipeline)
+    ? selectedHistory.deductionPipeline
+    : (pipelineData || {
+        modelUsed: "Ollama",
+        promptContextText: "// 等待触发开盘推演... 点击【生成/刷新盘前推演】发起 Map-Reduce 分段推理与 Context 搜刮",
+        knowledgeGraphContext: "// 暂无图谱 Context 节点数据",
+        searxngNewsContext: "// 暂无 SearXNG 盘前新闻数据",
+        positionsContext: "// 暂无实盘持仓与资金明细",
+        lessonsContext: "// 暂无历史风控教训记录",
+        rawOllamaOutput: "// 暂无 Ollama 原始生成 JSON 输出",
+      });
 
   const handleCopy = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -78,7 +89,7 @@ export const OllamaDeductionModal: React.FC<OllamaDeductionModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in">
       <div className="glass-card w-full max-w-5xl max-h-[90vh] flex flex-col border-slate-800 p-6 space-y-4 shadow-2xl overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-800 pb-3 shrink-0">
+        <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-slate-800 pb-3 gap-3 shrink-0">
           <div className="flex items-center gap-3">
             <div className="p-2.5 rounded-xl bg-gradient-to-tr from-cyan-500 to-indigo-600 shadow-lg shadow-cyan-500/20">
               <Bot className="w-6 h-6 text-white" />
@@ -91,27 +102,48 @@ export const OllamaDeductionModal: React.FC<OllamaDeductionModalProps> = ({
                   模型: {activeData.modelUsed}
                 </span>
               </div>
-              <p className="text-xs text-slate-400">检视输入 Ollama 上下文窗口的全量 Context (知识图谱 + SearXNG + 持仓) 与原始生成结果</p>
+              <p className="text-xs text-slate-400">检视输入 Ollama 上下文窗口的全量 Context (知识图谱 + SearXNG + 持仓) 与 Map-Reduce 原始生成结果</p>
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-all"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            {/* History Selector Dropdown */}
+            {strategyHistory.length > 0 && (
+              <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-900 border border-slate-800 text-xs">
+                <History className="w-3.5 h-3.5 text-cyan-400" />
+                <select
+                  value={selectedHistoryIndex}
+                  onChange={(e) => setSelectedHistoryIndex(Number(e.target.value))}
+                  className="bg-slate-950 border border-slate-700 text-cyan-300 text-xs rounded px-2 py-0.5 focus:outline-none font-semibold"
+                >
+                  <option value={-1}>🔥 [实时] 最新推演记录</option>
+                  {strategyHistory.map((h, idx) => (
+                    <option key={h.id || idx} value={idx}>
+                      📅 {h.strategyDate} 推演 ({h.deductionPipeline?.modelUsed || "Ollama"})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <button
+              onClick={onClose}
+              className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-all"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Tab Buttons */}
         <div className="flex items-center justify-between border-b border-slate-800/80 pb-2 shrink-0">
           <div className="flex items-center gap-2 overflow-x-auto">
             {[
-              { id: "prompt", label: "完整 Prompt 上下文", icon: FileText },
+              { id: "prompt", label: "完整 Prompt 上下文 Payload", icon: FileText },
               { id: "kg", label: "单股票知识图谱 Context", icon: Layers },
-              { id: "news", label: "SearXNG 盘前新闻", icon: Search },
-              { id: "positions", label: "实盘持仓与预算", icon: PieChart },
-              { id: "output", label: "Ollama 原始 JSON 输出", icon: Terminal },
+              { id: "news", label: "SearXNG 消歧新闻", icon: Search },
+              { id: "positions", label: "实盘持仓与资金", icon: PieChart },
+              { id: "output", label: "Ollama Map-Reduce 原始 JSON", icon: Terminal },
             ].map((tab) => {
               const Icon = tab.icon;
               return (
@@ -142,14 +174,14 @@ export const OllamaDeductionModal: React.FC<OllamaDeductionModalProps> = ({
 
         {/* Code View Area */}
         <div className="flex-1 bg-slate-950 p-4 rounded-xl border border-slate-800 overflow-y-auto font-mono text-xs text-slate-200 leading-relaxed whitespace-pre-wrap selection:bg-cyan-500/30 selection:text-cyan-200">
-          {getActiveText() || "// 暂无文本内容"}
+          {getActiveText()}
         </div>
 
         {/* Footer */}
         <div className="pt-2 border-t border-slate-800 text-xs text-slate-400 flex items-center justify-between shrink-0">
           <span className="flex items-center gap-1">
             <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-            <span>完全基于本地 Ollama 模型与 100% 隐私安全推演</span>
+            <span>完全基于本地 Ollama 模型与 100% 真实算力/数据推演</span>
           </span>
           <button
             onClick={onClose}
