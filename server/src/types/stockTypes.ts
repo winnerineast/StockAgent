@@ -241,6 +241,65 @@ export interface RetroPnLResult {
   lessonsLearned: string[];
 }
 
+export interface SectorSnapshotItem {
+  symbol: string;
+  name: string;
+  category: "GROWTH" | "CYCLICAL" | "DEFENSIVE";
+  lastPrice: number;
+  changeRate: number;
+  rsToSpy: number;
+  capitalInflow: number;
+  mainCapitalInflow: number;
+  turnoverRate: number;
+  quadrant: "LEADING" | "WEAKENING" | "LAGGING" | "IMPROVING";
+  isLeading: boolean;
+}
+
+export interface BenchmarkSnapshotItem {
+  symbol: string;
+  name: string;
+  lastPrice: number;
+  changeRate: number;
+}
+
+export interface CredibleNewsItem {
+  title: string;
+  summary: string;
+  sourceName: string;
+  tier: 1 | 2 | 3;
+  tierLabel: string;
+  sentiment: "BULLISH" | "BEARISH" | "NEUTRAL";
+  url: string;
+  publishedTime?: string;
+}
+
+export interface CrossAssetAnchors {
+  vix: number;
+  vixChange: number;
+  us10y: number;
+  dxy: number;
+  spyChange: number;
+  qqqChange: number;
+  iwmChange: number;
+}
+
+export interface DailyMacroSnapshotDTO {
+  id?: string;
+  snapshotDate: string;
+  createdAt?: string;
+  regimeMood: "BULLISH" | "BEARISH" | "NEUTRAL" | "VOLATILE";
+  regimeScore: number;
+  stanceBias: string;
+  positionCapPct: number;
+  stopLossPct: number;
+  crossAsset: CrossAssetAnchors;
+  sectors: SectorSnapshotItem[];
+  benchmarks: BenchmarkSnapshotItem[];
+  topNews: CredibleNewsItem[];
+  promptContext: string;
+  isLiveRealtime?: boolean;
+}
+
 export interface MacroMarketIntel {
   sentimentMood: "BULLISH" | "BEARISH" | "NEUTRAL" | "VOLATILE";
   sentimentScore: number; // 0 - 100
@@ -258,6 +317,8 @@ export interface MacroMarketIntel {
     riskWarning: string;
   };
   distilledPromptContext: string;
+  // 新增实时动态板块与信源结构
+  macroSnapshot?: DailyMacroSnapshotDTO;
 }
 
 export interface DeductionPipelineData {
@@ -270,10 +331,10 @@ export interface DeductionPipelineData {
   rawOllamaOutput?: string;
 }
 
-
 export interface DailyAllocationOutput {
   marketOverview: string;
   macroIntel?: MacroMarketIntel;
+  macroSnapshot?: DailyMacroSnapshotDTO;
   existingPositionGuidance: string;
   newPositionGuidance: string;
   actions: ActionItem[];

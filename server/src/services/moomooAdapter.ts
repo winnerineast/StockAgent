@@ -244,7 +244,38 @@ export class MooMooAdapter {
       changePercent: number;
     }>
   > {
-    // 优先通过 Python 桥接脚拉取 OpenD 的真实最新现价
+    const isAlive = await openDaemonManager.checkOpenDAlive();
+    if (!isAlive) {
+      return (symbols || []).map((s) => ({ symbol: s.toUpperCase(), price: 0, changePercent: 0 }));
+    }
+
+    // 如果传入了具体股票代码列表，通过 OpenD 批量快照接口获取最新现价与涨跌幅
+    if (symbols && symbols.length > 0) {
+      try {
+        const snaps = await this.fetchMarketSnapshotsFromOpenD(symbols);
+        if (snaps && snaps.length > 0) {
+          const snapMap = new Map<string, { price: number; changePercent: number }>();
+          snaps.forEach((s) => {
+            const p = s.lastPrice || s.prevClosePrice || 0;
+            const prev = s.prevClosePrice || p;
+            const chg = prev > 0 && p > 0 ? ((p - prev) / prev) * 100 : (s.preChangeRate || 0);
+            snapMap.set(s.symbol.toUpperCase(), { price: p, changePercent: Number(chg.toFixed(2)) });
+          });
+
+          return symbols.map((s) => {
+            const sym = s.toUpperCase();
+            const hit = snapMap.get(sym);
+            return {
+              symbol: sym,
+              price: hit ? Number(hit.price.toFixed(2)) : 0,
+              changePercent: hit ? hit.changePercent : 0,
+            };
+          });
+        }
+      } catch (e) {}
+    }
+
+    // 默认从实盘持仓拉取
     try {
       const realData = await this.queryRealProtobufPortfolio();
       if (realData && Array.isArray(realData.positions) && realData.positions.length > 0) {
@@ -441,6 +472,66 @@ export class MooMooAdapter {
             }
           } catch (e) {}
           resolve([]);
+        }
+      );
+    });
+  }
+
+  public async fetchMacroSectorsFromOpenD(): Promise<{
+    benchmarks: Array<{ symbol: string; name: string; lastPrice: number; changeRate: number }>;
+    spyChange: number;
+    qqqChange: number;
+    iwmChange: number;
+    sectors: any[];
+    leadingSectors: string[];
+    laggingSectors: string[];
+    fromOpenD: boolean;
+  }> {
+    const isAlive = await openDaemonManager.checkOpenDAlive();
+    if (!isAlive) {
+      return {
+        benchmarks: [],
+        spyChange: 0,
+        qqqChange: 0,
+        iwmChange: 0,
+        sectors: [],
+        leadingSectors: [],
+        laggingSectors: [],
+        fromOpenD: false,
+      };
+    }
+
+    const bridgeScript = getMoomooBridgeScriptPath();
+    return new Promise((resolve) => {
+      exec(
+        `python "${bridgeScript}" --action=macro_sectors`,
+        { encoding: "utf-8", timeout: 15000, maxBuffer: 10 * 1024 * 1024 },
+        (_err: any, stdout: string) => {
+          try {
+            const data = extractJsonFromBridgeOutput(stdout);
+            if (data && data.success && Array.isArray(data.sectors)) {
+              return resolve({
+                benchmarks: data.benchmarks || [],
+                spyChange: data.spyChange || 0,
+                qqqChange: data.qqqChange || 0,
+                iwmChange: data.iwmChange || 0,
+                sectors: data.sectors,
+                leadingSectors: data.leadingSectors || [],
+                laggingSectors: data.laggingSectors || [],
+                fromOpenD: true,
+              });
+            }
+          } catch (e) {}
+          resolve({
+            benchmarks: [],
+            spyChange: 0,
+            qqqChange: 0,
+            iwmChange: 0,
+            sectors: [],
+            leadingSectors: [],
+            laggingSectors: [],
+            fromOpenD: false,
+          });
         }
       );
     });

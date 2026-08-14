@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { DeductionProgressStepper, StageStep } from "./DeductionProgressStepper";
 import { PerStockDeductionRetroCard } from "./PerStockDeductionRetroCard";
+import { MacroSectorStudioCard } from "./MacroSectorStudioCard";
 
 export interface MacroMarketIntel {
   sentimentMood: "BULLISH" | "BEARISH" | "NEUTRAL" | "VOLATILE";
@@ -39,6 +40,7 @@ export interface MacroMarketIntel {
     riskWarning: string;
   };
   distilledPromptContext: string;
+  macroSnapshot?: any;
 }
 
 export function parseMacroIntel(raw?: string): MacroMarketIntel {
@@ -412,195 +414,16 @@ export const DeductionRetroStudioTab: React.FC<DeductionRetroStudioTabProps> = (
       </div>
 
       {/* ========================================================================= */}
-      {/* 🌐 STEP 2: SearXNG 全网宏观大盘动态与消息面全景 */}
+      {/* 🌐 STEP 2: 全网宏观大盘与 11 大行业板块量化中枢 (紧凑罗盘 + 3 维度穿透) */}
       {/* ========================================================================= */}
-      <div className="glass-card p-5 md:p-6 border-slate-800 bg-gradient-to-r from-slate-900/95 via-slate-900/75 to-indigo-950/25 relative overflow-hidden space-y-4 shadow-xl">
-        <StepSyncOverlay
-          status={step2Status}
-          stepNumber={2}
-          stepTitle="SearXNG 全网宏观与明星板块搜刮"
-          activeDetail={currentStage?.detail || "正在通过 SearXNG 检索 Bloomberg/CNBC/Reuters 美股大盘走向、明星板块热点与宏观情绪..."}
-          currentRunningStep={currentStep}
-        />
-        <div className={`space-y-4 transition-all duration-500 ${
-          step2Status !== "DONE" ? "filter blur-[1px] select-none pointer-events-none opacity-40" : "filter blur-0 opacity-100"
-        }`}>
-          {/* Top Bar: Title + Sentiment Mood Badge + Star Sector Chips */}
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3.5 border-b border-slate-800/80">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 shrink-0">
-                <Globe className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2.5 flex-wrap">
-                  <h2 className="text-base font-bold text-white tracking-tight">美股板块大盘动态 & SearXNG 消息面全景</h2>
-                  {/* Market Sentiment Badge */}
-                  <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold flex items-center gap-1.5 border ${
-                    parsedMacroIntel.sentimentMood === "BULLISH"
-                      ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/40"
-                      : parsedMacroIntel.sentimentMood === "BEARISH"
-                      ? "bg-rose-500/15 text-rose-300 border-rose-500/40"
-                      : "bg-amber-500/15 text-amber-300 border-amber-500/40"
-                  }`}>
-                    <span className="w-2 h-2 rounded-full animate-pulse bg-current"></span>
-                    <span>
-                      {parsedMacroIntel.sentimentMood === "BULLISH"
-                        ? `多头顺势 (${parsedMacroIntel.sentimentScore}分)`
-                        : parsedMacroIntel.sentimentMood === "BEARISH"
-                        ? `防守避险 (${parsedMacroIntel.sentimentScore}分)`
-                        : `震荡分化 (${parsedMacroIntel.sentimentScore}分)`}
-                    </span>
-                  </span>
-                </div>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  全网宏观情报 · Bloomberg/CNBC/Reuters 实时定调 · 自动注入个股推演
-                </p>
-              </div>
-            </div>
-
-            {/* Star Sectors Chips */}
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-[11px] text-slate-400 font-semibold flex items-center gap-1">
-                <Flame className="w-3.5 h-3.5 text-amber-400" />
-                <span>明星主线:</span>
-              </span>
-              {parsedMacroIntel.starSectors.map((sector, i) => (
-                <span
-                  key={i}
-                  className="px-2.5 py-0.5 rounded-lg bg-slate-950 border border-slate-800 text-[11px] text-cyan-300 font-medium hover:border-cyan-500/40 transition-all"
-                >
-                  {sector}
-                </span>
-              ))}
-            </div>
-          </div>
-
-          {/* Headline Banner */}
-          <div className="p-3.5 rounded-xl bg-slate-950/70 border border-cyan-500/20 text-xs text-slate-200 flex items-start gap-2.5">
-            <span className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-[10px] font-bold shrink-0 mt-0.5">
-              宏观定调
-            </span>
-            <span className="leading-relaxed font-medium text-slate-200">
-              {parsedMacroIntel.summaryHeadline}
-            </span>
-          </div>
-
-          {/* Body Grid: Left 7 Cols (News & Catalysts) + Right 5 Cols (Trading Directives & Prompt Injection) */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-            {/* Left 7 Cols: 🔥 权威资讯精选与事件催化 */}
-            <div className="lg:col-span-7 space-y-2.5">
-              <div className="flex items-center justify-between text-xs text-slate-400 pb-1">
-                <span className="font-bold text-white flex items-center gap-1.5">
-                  <Compass className="w-4 h-4 text-cyan-400" />
-                  <span>权威财经资讯精选 ({parsedMacroIntel.keyBulletPoints.length} 篇)</span>
-                </span>
-                <span className="text-[11px] text-slate-500">SearXNG 定向权威源</span>
-              </div>
-
-              {parsedMacroIntel.keyBulletPoints && parsedMacroIntel.keyBulletPoints.length > 0 ? (
-                <div className="space-y-2 max-h-[280px] overflow-y-auto pr-1">
-                  {parsedMacroIntel.keyBulletPoints.map((item, idx) => (
-                    <div
-                      key={idx}
-                      className="p-3 rounded-xl bg-slate-950/80 border border-slate-800/90 text-xs space-y-1.5 hover:border-slate-700 transition-all"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-bold text-slate-100 line-clamp-1 leading-snug">
-                          {item.title}
-                        </span>
-                        <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-cyan-950/60 text-cyan-400 border border-cyan-800/40 shrink-0">
-                          {item.source}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-400 leading-relaxed line-clamp-2">
-                        {item.snippet}
-                      </p>
-                      {item.url && (
-                        <div className="flex justify-end pt-0.5">
-                          <a
-                            href={item.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-[10px] text-cyan-400 hover:text-cyan-300 flex items-center gap-1 font-semibold transition-all"
-                          >
-                            <span>阅读原文</span>
-                            <ExternalLink className="w-2.5 h-2.5" />
-                          </a>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="p-6 rounded-xl bg-slate-950/60 border border-slate-800 text-xs text-slate-400 italic text-center">
-                  暂无检索到的宏观新闻，点击重新推演拉取。
-                </div>
-              )}
-            </div>
-
-            {/* Right 5 Cols: 🧭 今日操盘宏观指南与风控总纲 */}
-            <div className="lg:col-span-5 space-y-3">
-              <div className="flex items-center justify-between text-xs text-slate-400 pb-1">
-                <span className="font-bold text-white flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                  <span>今日操盘宏观指南 & 纪律约束</span>
-                </span>
-                <span className="text-[11px] text-indigo-400 font-semibold">操盘总纲</span>
-              </div>
-
-              {/* 3 Directives Cards */}
-              <div className="space-y-2">
-                {/* 1. 策略定调 */}
-                <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 text-xs flex items-start gap-2">
-                  <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold shrink-0 mt-0.5">
-                    策略基调
-                  </span>
-                  <span className="text-[11px] text-slate-200 font-semibold leading-relaxed">
-                    {parsedMacroIntel.macroTradingStance.bias}
-                  </span>
-                </div>
-
-                {/* 2. 仓位节奏 */}
-                <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 text-xs flex items-start gap-2">
-                  <span className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-[10px] font-bold shrink-0 mt-0.5">
-                    仓位调控
-                  </span>
-                  <span className="text-[11px] text-slate-300 leading-relaxed">
-                    {parsedMacroIntel.macroTradingStance.positionStrategy}
-                  </span>
-                </div>
-
-                {/* 3. 风控防线 */}
-                <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 text-xs flex items-start gap-2">
-                  <span className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 text-[10px] font-bold shrink-0 mt-0.5">
-                    风险防范
-                  </span>
-                  <span className="text-[11px] text-rose-300/90 leading-relaxed">
-                    {parsedMacroIntel.macroTradingStance.riskWarning}
-                  </span>
-                </div>
-              </div>
-
-              {/* Downstream Prompt Injection Terminal Card */}
-              <div className="p-3 bg-slate-950/95 rounded-xl border border-cyan-500/30 space-y-1.5">
-                <div className="flex items-center justify-between text-[10px] text-slate-400 pb-1 border-b border-slate-800">
-                  <span className="flex items-center gap-1 font-mono text-cyan-400">
-                    <Sparkles className="w-3 h-3" />
-                    <span>个股推演注入 Context (Prompt)</span>
-                  </span>
-                  <span className="text-[10px] font-semibold text-emerald-400 flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                    已注入 Step 3~4
-                  </span>
-                </div>
-                <p className="text-[11px] font-mono text-slate-300/90 leading-relaxed bg-slate-900/60 p-2 rounded-lg border border-slate-800/80">
-                  {parsedMacroIntel.distilledPromptContext}
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <MacroSectorStudioCard
+        macroIntel={parsedMacroIntel}
+        liveMacroSnapshot={parsedMacroIntel?.macroSnapshot}
+        loading={loading && step2Status === "ACTIVE"}
+        currentStage={currentStage}
+        stepStatus={step2Status}
+        holdingSymbols={perStockItems.filter(isHolding).map((i) => i.symbol)}
+      />
 
       {/* ========================================================================= */}
       {/* 🎯 STEP 3 & 4: 统一候选池与持仓多维推演 */}

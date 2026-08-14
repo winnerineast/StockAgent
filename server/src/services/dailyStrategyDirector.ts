@@ -3,6 +3,7 @@ import { openDaemonManager } from "./openDaemonManager";
 import { moomooAdapter } from "./moomooAdapter";
 import { searxngSearchService } from "./searxngSearchService";
 import { stockKnowledgeGraphStoreService } from "./stockKnowledgeGraphStore";
+import { macroSnapshotStoreService } from "./macroSnapshotStore";
 import { StockEngine, stockEngine } from "./stockEngine";
 import { ollamaService } from "./ollamaService";
 import { computeTotalPnL, computeRetroPnL, savePortfolioSnapshot } from "./stockMemoryManager";
@@ -152,14 +153,31 @@ export class DailyStrategyDirector {
       watchlistItems,
     };
 
-    // STEP 2: Phase 1 搜刮美股大盘走向、热点情绪与主流财经媒体 (MACRO_SEARCH)
-    notifyStage(2, "MACRO_SEARCH", "SearXNG 全网宏观与明星板块", "正在从 Bloomberg/CNBC/Reuters 搜刮大盘走向与热点...", 40);
-    const macroRes = await searxngSearchService.searchMacroAndSectorNews();
+    // STEP 2: Phase 1 动态拉取 OpenD 11 大行业板块资金流，并执行 SearXNG 权威信源分级搜刮 (MACRO_SEARCH)
+    notifyStage(2, "MACRO_SEARCH", "MooMoo OpenD 11大行业板块与资金流", "正在拉取半导体/科技/金融/能源等 11 大行业 ETF 实时行情与资金流...", 30);
+    const openDSectorsData = await moomooAdapter.fetchMacroSectorsFromOpenD();
+
+    // 实时流式注入已就绪的板块数据
+    this.liveStageData = {
+      ...this.liveStageData,
+      openDSectorsData,
+    };
+
+    notifyStage(2, "MACRO_SEARCH", "SearXNG 权威财经通讯社分级搜刮", "正在从 Bloomberg/Reuters/WSJ 检索 Tier-1 权威资讯与政策预期差...", 40);
+    const macroRes = await searxngSearchService.searchMacroAndSectorNews(openDSectorsData);
+
+    // 异步高密度落库快照 (L2 存储)
+    if (macroRes.macroIntel.macroSnapshot) {
+      try {
+        await macroSnapshotStoreService.saveDailySnapshot(macroRes.macroIntel.macroSnapshot);
+      } catch (e) {}
+    }
 
     this.liveStageData = {
       ...this.liveStageData,
       step2Done: true,
       macroOverview: macroRes.macroOverview,
+      macroSnapshot: macroRes.macroIntel.macroSnapshot,
     };
 
     // STEP 3: 候选池构建与标的多维消歧深度挖掘 (CANDIDATE_AND_SEARCH)
@@ -489,7 +507,7 @@ export class DailyStrategyDirector {
     // 确保列表中的全部标的均有对齐推演动作，无任何遗漏
     perStockDeductionRetroList.forEach((item) => {
       if (!item.currentRecommendation) {
-        const curPrice = quotesMap.get(item.symbol.toUpperCase()) || item.position?.marketPrice || item.position?.costBasis || 100;
+        const curPrice = quotesMap.get(item.symbol.toUpperCase()) || item.openDSnapshot?.lastPrice || item.position?.marketPrice || item.position?.costBasis || 1.0;
         const pos = item.position;
         const isHolding = pos && pos.shares > 0;
         const pnlPct = pos && pos.costBasis > 0 ? ((curPrice - pos.costBasis) / pos.costBasis) * 100 : 0;
@@ -601,6 +619,7 @@ export class DailyStrategyDirector {
       output: {
         marketOverview: screenerRes.marketOverview,
         macroIntel: macroRes.macroIntel,
+        macroSnapshot: macroRes.macroIntel.macroSnapshot,
         existingPositionGuidance: macroRes.macroIntel.macroTradingStance.positionStrategy,
         newPositionGuidance: macroRes.macroIntel.macroTradingStance.bias,
         actions: screenerRes.actions,

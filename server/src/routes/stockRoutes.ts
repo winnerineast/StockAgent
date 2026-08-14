@@ -5,6 +5,7 @@ import { searxngSearchService } from "../services/searxngSearchService";
 import { ollamaService } from "../services/ollamaService";
 import { dailyStrategyDirector } from "../services/dailyStrategyDirector";
 import { stockKnowledgeGraphStoreService } from "../services/stockKnowledgeGraphStore";
+import { macroSnapshotStoreService } from "../services/macroSnapshotStore";
 import { prisma } from "../db/prisma";
 
 export const stockRouter = Router();
@@ -49,7 +50,7 @@ stockRouter.get("/portfolio", async (_req: Request, res: Response) => {
         data: {
           id: "default-portfolio",
           name: "MooMoo 美股主仓位",
-          cashBalance: openDData.cashBalance || 86.13,
+          cashBalance: openDData.cashBalance ?? 0.0,
           totalBudget: 1000.0,
           positions: {
             create: openDData.positions.map((p) => ({
@@ -267,4 +268,23 @@ stockRouter.get("/quotes", async (req: Request, res: Response) => {
   const symbols = symbolsParam ? symbolsParam.split(",") : [];
   const quotes = await moomooAdapter.fetchMarketQuotes(symbols);
   return res.json({ success: true, data: quotes });
+});
+
+// 11. 获取最新宏观与板块量化快照 (供前端 0 延迟秒级回显)
+stockRouter.get("/macro/latest", async (_req: Request, res: Response) => {
+  const latest = await macroSnapshotStoreService.getLatestSnapshot();
+  return res.json({ success: true, data: latest });
+});
+
+// 12. 获取历史宏观演进轨迹 (过去 N 天快照)
+stockRouter.get("/macro/history", async (req: Request, res: Response) => {
+  const days = req.query.days ? parseInt(req.query.days as string, 10) : 30;
+  const history = await macroSnapshotStoreService.getHistoricalSnapshots(days);
+  return res.json({ success: true, data: history });
+});
+
+// 13. 直接拉取 OpenD 11 大行业板块实时行情与资金流
+stockRouter.get("/macro/sectors", async (_req: Request, res: Response) => {
+  const sectorsData = await moomooAdapter.fetchMacroSectorsFromOpenD();
+  return res.json({ success: true, data: sectorsData });
 });

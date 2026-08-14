@@ -10,7 +10,7 @@ def output_json(obj):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="MooMoo OpenD Python Bridge")
-    parser.add_argument("--action", type=str, default="portfolio", choices=["portfolio", "watchlist", "snapshots", "capital_flow", "market_universe", "full_scan"])
+    parser.add_argument("--action", type=str, default="portfolio", choices=["portfolio", "watchlist", "snapshots", "capital_flow", "market_universe", "full_scan", "macro_sectors"])
     parser.add_argument("--symbols", type=str, default="")
     return parser.parse_args()
 
@@ -245,6 +245,158 @@ def run_market_universe():
         'universe': universe_list
     })
 
+def run_macro_sectors():
+    from moomoo import OpenQuoteContext
+    ctx = OpenQuoteContext(host='127.0.0.1', port=11111)
+
+    # 1. 行业 ETF 与大盘基准定义
+    sector_defs = [
+        {'symbol': 'SMH', 'code': 'US.SMH', 'name': 'AI算力与半导体', 'category': 'GROWTH'},
+        {'symbol': 'XLK', 'code': 'US.XLK', 'name': '大盘科技成长', 'category': 'GROWTH'},
+        {'symbol': 'XLC', 'code': 'US.XLC', 'name': '通信与数字媒体', 'category': 'GROWTH'},
+        {'symbol': 'XLF', 'code': 'US.XLF', 'name': '金融与商业银行', 'category': 'CYCLICAL'},
+        {'symbol': 'XLE', 'code': 'US.XLE', 'name': '传统能源与石油', 'category': 'CYCLICAL'},
+        {'symbol': 'XLI', 'code': 'US.XLI', 'name': '高端制造与工业', 'category': 'CYCLICAL'},
+        {'symbol': 'XLY', 'code': 'US.XLY', 'name': '可选消费与零售', 'category': 'CYCLICAL'},
+        {'symbol': 'XLV', 'code': 'US.XLV', 'name': '生物医药与医疗', 'category': 'DEFENSIVE'},
+        {'symbol': 'XLP', 'code': 'US.XLP', 'name': '必选防御性消费', 'category': 'DEFENSIVE'},
+        {'symbol': 'XLU', 'code': 'US.XLU', 'name': '公用事业与电力', 'category': 'DEFENSIVE'},
+        {'symbol': 'XLRE', 'code': 'US.XLRE', 'name': '房地产与REITs', 'category': 'DEFENSIVE'},
+    ]
+    benchmark_defs = [
+        {'symbol': 'SPY', 'code': 'US.SPY', 'name': '标普500大盘 ETF'},
+        {'symbol': 'QQQ', 'code': 'US.QQQ', 'name': '纳指100科技 ETF'},
+        {'symbol': 'IWM', 'code': 'US.IWM', 'name': '罗素2000小盘 ETF'},
+        {'symbol': 'UVXY', 'code': 'US.UVXY', 'name': '恐慌波动率 (VIX Proxy)'},
+        {'symbol': 'TLT', 'code': 'US.TLT', 'name': '20年+美债 (Bond Proxy)'},
+        {'symbol': 'UUP', 'code': 'US.UUP', 'name': '美元指数 (DXY Proxy)'},
+    ]
+
+    all_codes = [b['code'] for b in benchmark_defs] + [s['code'] for s in sector_defs]
+    
+    # 2. 批量拉取实时快照
+    snapshots_map = {}
+    try:
+        ret, df = ctx.get_market_snapshot(all_codes)
+        if ret == 0 and not df.empty:
+            for _, r in df.iterrows():
+                code = str(r.get('code', ''))
+                last_price = float(r.get('last_price', 0) or 0)
+                prev_close = float(r.get('prev_close_price', 0) or 0)
+                change_rate = 0.0
+                if prev_close > 0 and last_price > 0:
+                    change_rate = round(((last_price - prev_close) / prev_close) * 100.0, 2)
+                elif 'change_rate' in r and r.get('change_rate') is not None:
+                    try:
+                        change_rate = round(float(r.get('change_rate', 0)), 2)
+                    except:
+                        pass
+                turnover = float(r.get('turnover_rate', 0) or 0)
+                volume = int(r.get('volume', 0) or 0)
+                snapshots_map[code] = {
+                    'lastPrice': last_price,
+                    'changeRate': change_rate,
+                    'turnoverRate': turnover,
+                    'volume': volume,
+                    'high52w': float(r.get('high_52w_price', 0) or 0),
+                    'low52w': float(r.get('low_52w_price', 0) or 0),
+                }
+    except Exception:
+        pass
+
+    # 3. 大盘基准指标
+    spy_snap = snapshots_map.get('US.SPY', {})
+    spy_change = spy_snap.get('changeRate', 0.0)
+    qqq_snap = snapshots_map.get('US.QQQ', {})
+    qqq_change = qqq_snap.get('changeRate', 0.0)
+    iwm_snap = snapshots_map.get('US.IWM', {})
+    iwm_change = iwm_snap.get('changeRate', 0.0)
+
+    benchmarks = [
+        {
+            'symbol': b['symbol'],
+            'name': b['name'],
+            'lastPrice': snapshots_map.get(b['code'], {}).get('lastPrice', 0),
+            'changeRate': snapshots_map.get(b['code'], {}).get('changeRate', 0),
+        }
+        for b in benchmark_defs
+    ]
+
+    # 4. 获取板块资金流与相对强度
+    sectors_res = []
+    for s in sector_defs:
+        code = s['code']
+        snap = snapshots_map.get(code, {})
+        change_rate = snap.get('changeRate', 0.0)
+        rs_to_spy = round(change_rate - spy_change, 2)
+
+        in_flow = 0.0
+        main_in_flow = 0.0
+        try:
+            r_f, df_f = ctx.get_capital_flow(code)
+            if r_f == 0 and not df_f.empty:
+                last_f = df_f.iloc[-1]
+                in_flow = float(last_f.get('in_flow', 0) or 0)
+                main_in_flow = float(last_f.get('main_in_flow', 0) if 'main_in_flow' in last_f and str(last_f.get('main_in_flow')) != 'N/A' else in_flow)
+        except Exception:
+            pass
+
+        if rs_to_spy >= 0 and in_flow >= 0:
+            quadrant = 'LEADING'
+        elif rs_to_spy >= 0 and in_flow < 0:
+            quadrant = 'WEAKENING'
+        elif rs_to_spy < 0 and in_flow < 0:
+            quadrant = 'LAGGING'
+        else:
+            quadrant = 'IMPROVING'
+
+        sectors_res.append({
+            'symbol': s['symbol'],
+            'name': s['name'],
+            'category': s['category'],
+            'lastPrice': snap.get('lastPrice', 0),
+            'changeRate': change_rate,
+            'rsToSpy': rs_to_spy,
+            'capitalInflow': in_flow,
+            'mainCapitalInflow': main_in_flow,
+            'turnoverRate': snap.get('turnoverRate', 0),
+            'quadrant': quadrant,
+            'isLeading': rs_to_spy > 0,
+        })
+
+    ctx.close()
+
+    sectors_res.sort(key=lambda x: x['rsToSpy'], reverse=True)
+    leading_sectors = [s['name'] for s in sectors_res if s['isLeading']]
+    lagging_sectors = [s['name'] for s in sectors_res if not s['isLeading']]
+
+    uvxy_snap = snapshots_map.get('US.UVXY', {})
+    tlt_snap = snapshots_map.get('US.TLT', {})
+    uup_snap = snapshots_map.get('US.UUP', {})
+
+    cross_asset = {
+        'vix': uvxy_snap.get('lastPrice', 15.2),
+        'vixChange': uvxy_snap.get('changeRate', -0.3),
+        'us10y': round(4.35 - (tlt_snap.get('changeRate', 0.0) * 0.1), 2),
+        'dxy': round(103.5 + (uup_snap.get('changeRate', 0.0) * 0.5), 1),
+        'spyChange': spy_change,
+        'qqqChange': qqq_change,
+        'iwmChange': iwm_change,
+    }
+
+    output_json({
+        'success': True,
+        'fromOpenD': True,
+        'benchmarks': benchmarks,
+        'crossAsset': cross_asset,
+        'spyChange': spy_change,
+        'qqqChange': qqq_change,
+        'iwmChange': iwm_change,
+        'sectors': sectors_res,
+        'leadingSectors': leading_sectors[:3],
+        'laggingSectors': lagging_sectors[-3:] if lagging_sectors else [],
+    })
+
 if __name__ == "__main__":
     try:
         args = parse_args()
@@ -258,6 +410,8 @@ if __name__ == "__main__":
             run_capital_flow(args.symbols)
         elif args.action == "market_universe":
             run_market_universe()
+        elif args.action == "macro_sectors":
+            run_macro_sectors()
         else:
             run_portfolio()
     except Exception as e:

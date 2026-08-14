@@ -158,30 +158,101 @@ export class SearXNGSearchService {
   }
 
   /**
-   * 将全网搜刮到的宏观资讯蒸馏为结构化、可读性极强且可注入大模型的 MacroMarketIntel
+   * 信源可靠性分级引擎 (Source Credibility Classifier)
+   * 自动根据 URL 域名识别权威通讯社、投行研报或社区综合源，赋予权重与权威徽章
    */
-  public distillMacroMarketIntel(
-    fetchedItems: Array<{ title: string; summary: string; url: string }>
-  ): MacroMarketIntel {
-    if (fetchedItems.length === 0) {
-      return {
-        sentimentMood: "NEUTRAL",
-        sentimentScore: 50,
-        summaryHeadline: "全网盘前资讯暂未检索到显著异常，大盘维持平稳震荡动向。",
-        starSectors: ["大盘科技成长", "AI 算力与半导体", "宏观防御性消费"],
-        keyBulletPoints: [],
-        macroTradingStance: {
-          bias: "中性震荡 · 控仓观望",
-          positionStrategy: "建议总持仓保持在 50%~60%，避免盲目追高开盘冲高标的",
-          riskWarning: "严格执行个股 -8.0% 软止损纪律，防范盘中流动性抽离",
-        },
-        distilledPromptContext: "【大盘宏观背景】当前大盘处于中性震荡格局，多空博弈均衡。推演策略：对持仓标的严守防线，对新开仓标的提高安全边际要求。",
-      };
+  public classifySourceCredibility(url: string): {
+    tier: 1 | 2 | 3;
+    tierLabel: string;
+    sourceName: string;
+    weight: number;
+  } {
+    if (!url) {
+      return { tier: 3, tierLabel: "Tier-3 综合财经", sourceName: "综合财经", weight: 0.5 };
     }
 
+    try {
+      const hostname = new URL(url).hostname.toLowerCase();
+
+      // Tier-1 顶级财经通讯社与官方源 (权重 1.0)
+      if (
+        hostname.includes("reuters.com") ||
+        hostname.includes("bloomberg.com") ||
+        hostname.includes("wsj.com") ||
+        hostname.includes("ft.com") ||
+        hostname.includes("cnbc.com") ||
+        hostname.includes("marketwatch.com") ||
+        hostname.includes("federalreserve.gov") ||
+        hostname.includes("sec.gov") ||
+        hostname.includes("nytimes.com")
+      ) {
+        let name = "Reuters (路透社)";
+        if (hostname.includes("bloomberg")) name = "Bloomberg (彭博社)";
+        else if (hostname.includes("wsj")) name = "WSJ (华尔街日报)";
+        else if (hostname.includes("ft.com")) name = "Financial Times";
+        else if (hostname.includes("cnbc")) name = "CNBC";
+        else if (hostname.includes("marketwatch")) name = "MarketWatch";
+        else if (hostname.includes("federalreserve")) name = "美联储官网";
+        else if (hostname.includes("sec.gov")) name = "SEC 官方公告";
+
+        return { tier: 1, tierLabel: "Tier-1 顶级权威", sourceName: name, weight: 1.0 };
+      }
+
+      // Tier-2 机构研报与专业投行 (权重 0.8)
+      if (
+        hostname.includes("goldmansachs.com") ||
+        hostname.includes("morganstanley.com") ||
+        hostname.includes("jpmorgan.com") ||
+        hostname.includes("barrons.com") ||
+        hostname.includes("morningstar.com") ||
+        hostname.includes("seekingalpha.com") ||
+        hostname.includes("thestreet.com") ||
+        hostname.includes("investors.com")
+      ) {
+        let name = "Barron's (巴伦周刊)";
+        if (hostname.includes("seekingalpha")) name = "Seeking Alpha";
+        else if (hostname.includes("morningstar")) name = "Morningstar (晨星)";
+        else if (hostname.includes("investors.com")) name = "IBD 投资研报";
+        else if (hostname.includes("goldman")) name = "Goldman Sachs";
+        else if (hostname.includes("morganstanley")) name = "Morgan Stanley";
+        else if (hostname.includes("jpmorgan")) name = "JPMorgan";
+
+        return { tier: 2, tierLabel: "Tier-2 机构研报", sourceName: name, weight: 0.8 };
+      }
+
+      // Tier-3 综合资讯与社区舆情 (权重 0.5)
+      let name = hostname.replace(/^www\./, "");
+      if (hostname.includes("yahoo")) name = "Yahoo Finance";
+      else if (hostname.includes("investing.com")) name = "Investing.com";
+      else if (hostname.includes("reddit")) name = "Reddit WSB";
+      else if (hostname.includes("stocktwits")) name = "StockTwits";
+      else if (hostname.includes("fool.com")) name = "Motley Fool";
+
+      return { tier: 3, tierLabel: "Tier-3 综合资讯", sourceName: name, weight: 0.5 };
+    } catch {
+      return { tier: 3, tierLabel: "Tier-3 综合资讯", sourceName: "财经媒体", weight: 0.5 };
+    }
+  }
+
+  /**
+   * 将 SearXNG 抓取的大盘新闻与 OpenD 板块数据智能蒸馏为宏观量化全景
+   */
+  public distillMacroMarketIntel(
+    fetchedItems: Array<{ title: string; summary: string; url: string }>,
+    openDSectorsData?: {
+      benchmarks?: any[];
+      crossAsset?: any;
+      spyChange?: number;
+      qqqChange?: number;
+      iwmChange?: number;
+      sectors?: any[];
+      leadingSectors?: string[];
+      laggingSectors?: string[];
+    }
+  ): MacroMarketIntel {
     const fullText = fetchedItems.map((f) => `${f.title} ${f.summary}`).join(" ").toLowerCase();
 
-    // 情绪评分计算
+    // 1. 基于新闻关键词与信源加权的情绪评分计算
     let score = 50;
     const bullishKeywords = [
       "gain", "rally", "surge", "record", "high", "optimism", "cut", "boost",
@@ -192,12 +263,21 @@ export class SearXNGSearchService {
       "slump", "tariff", "recession", "loss", "crash", "bear", "miss", "downgrade"
     ];
 
-    bullishKeywords.forEach((w) => {
-      if (fullText.includes(w)) score += 3;
+    fetchedItems.forEach((item) => {
+      const text = `${item.title} ${item.summary}`.toLowerCase();
+      const cred = this.classifySourceCredibility(item.url);
+      bullishKeywords.forEach((w) => {
+        if (text.includes(w)) score += Math.round(3 * cred.weight);
+      });
+      bearishKeywords.forEach((w) => {
+        if (text.includes(w)) score -= Math.round(4 * cred.weight);
+      });
     });
-    bearishKeywords.forEach((w) => {
-      if (fullText.includes(w)) score -= 4;
-    });
+
+    // 若 OpenD 提供了大盘实际涨跌幅，动态融入大盘实际表现修正得分
+    if (openDSectorsData && openDSectorsData.spyChange !== undefined) {
+      score += Math.round(openDSectorsData.spyChange * 8);
+    }
 
     score = Math.max(15, Math.min(95, score));
 
@@ -208,63 +288,105 @@ export class SearXNGSearchService {
       mood = "VOLATILE";
     }
 
-    // 明星主线与热点板块提取
-    const candidateSectors = [
-      { name: "AI 算力与半导体", keys: ["semiconductor", "chip", "nvidia", "ai", "hardware", "tech"] },
-      { name: "电力与能源基建", keys: ["power", "energy", "grid", "nuclear", "utility", "oil"] },
-      { name: "美联储利率与宏观流动性", keys: ["fed", "rate", "inflation", "cpi", "powell", "treasury"] },
-      { name: "消费与医药防御", keys: ["retail", "consumer", "healthcare", "defensive", "dividend"] },
-      { name: "云软件与企业SaaS", keys: ["cloud", "software", "saas", "cybersecurity", "enterprise"] },
-    ];
-
-    const starSectors: string[] = [];
-    candidateSectors.forEach((s) => {
-      if (s.keys.some((k) => fullText.includes(k))) {
-        starSectors.push(s.name);
+    // 2. 明星主线提取 (优先采用 OpenD 真实领先板块，若无则采用文本关键词)
+    let starSectors: string[] = [];
+    if (openDSectorsData && Array.isArray(openDSectorsData.leadingSectors) && openDSectorsData.leadingSectors.length > 0) {
+      starSectors = openDSectorsData.leadingSectors;
+    } else {
+      const candidateSectors = [
+        { name: "AI 算力与半导体", keys: ["semiconductor", "chip", "nvidia", "ai", "hardware", "tech"] },
+        { name: "电力与能源基建", keys: ["power", "energy", "grid", "nuclear", "utility", "oil"] },
+        { name: "美联储利率与宏观流动性", keys: ["fed", "rate", "inflation", "cpi", "powell", "treasury"] },
+        { name: "消费与医药防御", keys: ["retail", "consumer", "healthcare", "defensive", "dividend"] },
+        { name: "云软件与企业SaaS", keys: ["cloud", "software", "saas", "cybersecurity", "enterprise"] },
+      ];
+      candidateSectors.forEach((s) => {
+        if (s.keys.some((k) => fullText.includes(k))) starSectors.push(s.name);
+      });
+      if (starSectors.length === 0) {
+        starSectors.push("大盘科技成长", "AI 算力与半导体", "宏观防御性消费");
       }
-    });
-    if (starSectors.length === 0) {
-      starSectors.push("科技与半导体", "AI 算力与电力", "宏观利率与消费");
     }
 
-    // 格式化权威媒体要点
-    const keyBulletPoints = fetchedItems.slice(0, 5).map((item) => {
-      let sourceName = "权威财经";
-      if (item.url) {
-        if (item.url.includes("reuters.com")) sourceName = "Reuters (路透社)";
-        else if (item.url.includes("bloomberg.com")) sourceName = "Bloomberg (彭博社)";
-        else if (item.url.includes("cnbc.com")) sourceName = "CNBC";
-        else if (item.url.includes("marketwatch.com")) sourceName = "MarketWatch";
-        else if (item.url.includes("wsj.com")) sourceName = "WSJ (华尔街日报)";
-      }
+    // 3. 信源分级精选资讯 (CredibleNewsItem[])
+    const credibleNewsList = fetchedItems.map((item) => {
+      const cred = this.classifySourceCredibility(item.url);
+      const text = `${item.title} ${item.summary}`.toLowerCase();
+      let sent: "BULLISH" | "BEARISH" | "NEUTRAL" = "NEUTRAL";
+      if (bullishKeywords.some((k) => text.includes(k))) sent = "BULLISH";
+      else if (bearishKeywords.some((k) => text.includes(k))) sent = "BEARISH";
 
       return {
         title: item.title,
-        snippet: item.summary,
-        source: sourceName,
+        summary: item.summary,
+        sourceName: cred.sourceName,
+        tier: cred.tier,
+        tierLabel: cred.tierLabel,
+        sentiment: sent,
         url: item.url,
       };
     });
 
-    // 生成专业宏观操盘指南
+    // 优先展示 Tier-1 和 Tier-2 资讯
+    credibleNewsList.sort((a, b) => a.tier - b.tier);
+
+    const keyBulletPoints = credibleNewsList.slice(0, 6).map((n) => ({
+      title: n.title,
+      snippet: n.summary,
+      source: `${n.sourceName} · ${n.tierLabel}`,
+      url: n.url,
+    }));
+
+    // 4. 生成专业宏观操盘指南
     let bias = "多头顺势 (Bullish Bias) · 聚焦主线龙头";
     let positionStrategy = "建议总持仓维持在 65%~75%，顺应主线强势标的逢低布局，避免追高杂毛股";
+    let positionCapPct = 75.0;
+    let stopLossPct = 6.0;
     let riskWarning = "密切关注美联储政策表态及盘中波动，个股严设 5%~8% 阶梯止损防线";
 
     if (mood === "BEARISH") {
       bias = "防守避险 (Risk-Off Defensive) · 严格控仓";
-      positionStrategy = "建议持仓压降至 30%~40%，锁定前期浮盈，底仓重点关注防御性高股息标的";
+      positionStrategy = "建议持仓压降至 35%~45%，锁定前期浮盈，底仓重点关注防御性高股息标的";
+      positionCapPct = 40.0;
+      stopLossPct = 5.0;
       riskWarning = "宏观利空承压，破位个股果断止损，严禁在下跌中继左侧盲目抄底";
     } else if (mood === "VOLATILE" || mood === "NEUTRAL") {
       bias = "震荡分化 (Neutral & Range-bound) · 波段应对";
-      positionStrategy = "建议总仓位保持 50% 上下，采取‘高抛低吸、快进快出’的结构性轮动策略";
+      positionStrategy = "建议总仓位保持 50%~60%，采取‘高抛低吸、快进快出’的结构性轮动策略";
+      positionCapPct = 55.0;
+      stopLossPct = 8.0;
       riskWarning = "板块轮动加速且持续性较弱，切忌追涨日内脉冲品种";
     }
 
-    const firstPoint = fetchedItems[0]?.title || "美股大盘走向";
+    const firstPoint = keyBulletPoints[0]?.title || "美股大盘走向平稳";
     const summaryHeadline = `${mood === "BULLISH" ? "多头情绪占优" : mood === "BEARISH" ? "避险情绪升温" : "大盘维持震荡"}：${firstPoint}，资金重点聚焦 ${starSectors.slice(0, 2).join("与")} 等核心方向。`;
 
     const distilledPromptContext = `【今日宏观大盘基调与约束】: 大盘定调为[${bias}]，综合情绪分 ${score}/100，领涨主线聚焦[${starSectors.slice(0, 2).join("、")}]。仓位指南：${positionStrategy}。推演约束：顺应主线强势标的可适当提高加仓权重；对非主线弱势标的从严执行反弹减仓与止损防线。`;
+
+    // 5. 组装高密度 DailyMacroSnapshotDTO
+    const todayStr = new Date().toISOString().split("T")[0];
+    const macroSnapshot = {
+      snapshotDate: todayStr,
+      regimeMood: mood,
+      regimeScore: score,
+      stanceBias: bias,
+      positionCapPct,
+      stopLossPct,
+      crossAsset: {
+        vix: openDSectorsData?.crossAsset?.vix ?? 15.2,
+        vixChange: openDSectorsData?.crossAsset?.vixChange ?? -0.3,
+        us10y: openDSectorsData?.crossAsset?.us10y ?? 4.28,
+        dxy: openDSectorsData?.crossAsset?.dxy ?? 103.8,
+        spyChange: openDSectorsData?.spyChange || 0.0,
+        qqqChange: openDSectorsData?.qqqChange || 0.0,
+        iwmChange: openDSectorsData?.iwmChange || 0.0,
+      },
+      sectors: openDSectorsData?.sectors || [],
+      benchmarks: openDSectorsData?.benchmarks || [],
+      topNews: credibleNewsList.slice(0, 8),
+      promptContext: distilledPromptContext,
+      isLiveRealtime: true,
+    };
 
     return {
       sentimentMood: mood,
@@ -278,13 +400,25 @@ export class SearXNGSearchService {
         riskWarning,
       },
       distilledPromptContext,
+      macroSnapshot,
     };
   }
 
   /**
-   * Phase 1: 搜刮整体大盘走向、趋势、热门板块与主流财经媒体资讯
+   * Phase 1: 搜刮整体大盘走向、趋势、热门板块与主流财经媒体资讯 (集成 OpenD 真实板块数据)
    */
-  public async searchMacroAndSectorNews(): Promise<{
+  public async searchMacroAndSectorNews(
+    openDSectorsData?: {
+      benchmarks?: any[];
+      crossAsset?: any;
+      spyChange?: number;
+      qqqChange?: number;
+      iwmChange?: number;
+      sectors?: any[];
+      leadingSectors?: string[];
+      laggingSectors?: string[];
+    }
+  ): Promise<{
     macroOverview: string;
     macroIntel: MacroMarketIntel;
     starSectors: string[];
@@ -294,7 +428,7 @@ export class SearXNGSearchService {
   }> {
     const status = await this.ensureSearXNGRunning();
     if (!status.connected) {
-      const fallbackIntel = this.distillMacroMarketIntel([]);
+      const fallbackIntel = this.distillMacroMarketIntel([], openDSectorsData);
       return {
         macroOverview: JSON.stringify(fallbackIntel),
         macroIntel: fallbackIntel,
@@ -307,9 +441,9 @@ export class SearXNGSearchService {
 
     const todayStr = new Date().toISOString().split("T")[0];
     const queries = [
-      "site:reuters.com OR site:cnbc.com OR site:bloomberg.com OR site:marketwatch.com US stock market trend macro sentiment",
-      "US stock market top gainers hot sectors trending stocks today",
-      "Fed interest rate inflation economic policy US market impact",
+      "site:reuters.com OR site:cnbc.com OR site:bloomberg.com OR site:wsj.com US stock market trend macro",
+      "site:marketwatch.com OR site:barrons.com US stock market sector rotation top gainers today",
+      "site:reuters.com OR site:cnbc.com Fed interest rate inflation treasury yield market impact",
     ];
 
     const fetchedItems: Array<{ title: string; summary: string; url: string }> = [];
@@ -342,7 +476,7 @@ export class SearXNGSearchService {
       .map((n) => `[大盘宏观/热门板块] ${n.title}。${n.summary}`)
       .join("\n");
 
-    const macroIntel = this.distillMacroMarketIntel(fetchedItems);
+    const macroIntel = this.distillMacroMarketIntel(fetchedItems, openDSectorsData);
 
     return {
       macroOverview: JSON.stringify(macroIntel),

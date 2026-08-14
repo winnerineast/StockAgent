@@ -128,3 +128,28 @@ model StockMarketIntelCache {
   createdAt DateTime @default(now())
 }
 
+model DailyMacroSnapshot {
+  id               String   @id @default(uuid())
+  snapshotDate     String   @unique // YYYY-MM-DD
+  createdAt        DateTime @default(now())
+
+  // 宏观 Regime 量化特征
+  regimeMood       String   // "BULLISH" | "BEARISH" | "NEUTRAL" | "VOLATILE"
+  regimeScore      Float    // 0~100
+  stanceBias       String   // 操盘基调 (如 "中性震荡 · 控仓观望")
+  positionCapPct   Float    // 建议最大仓位上限 (40%~80%)
+  stopLossPct      Float    // 推荐软止损红线 (5%~8%)
+
+  // 跨资产锚点 (JSON: { vix, vixChange, us10y, dxy, spyChange, qqqChange })
+  crossAssetJson   String
+
+  // 11大行业板块强弱与资金流矩阵 (JSON: Array<SectorSnapshotItem>)
+  sectorMatrixJson String
+
+  // 权威信源精选事件与预期差 (JSON: Array<CredibleNewsItem>)
+  topNewsJson      String
+
+  // 因果传导注入 Prompt 纯净 Context
+  promptContext    String
+}
+
