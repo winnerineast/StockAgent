@@ -14,7 +14,21 @@ import {
   DollarSign,
   Activity,
   BookOpen,
+  Zap,
+  CheckCircle2,
 } from "lucide-react";
+
+export interface TimeFmForecastItem {
+  direction: "UP" | "DOWN" | "SIDEWAYS";
+  directionLabel: string;
+  predictedPrice: number;
+  predictedChangeRate: number;
+  confidenceLow: number;
+  confidenceHigh: number;
+  confidenceScore: number;
+  momentumRationale: string;
+}
+
 interface CapitalFlowItem {
   trend: "INFLOW" | "OUTFLOW" | "NEUTRAL";
   description: string;
@@ -85,6 +99,7 @@ interface PerStockDeductionRetroCardProps {
       costBasis: number;
       marketPrice: number;
     };
+    timefmForecast?: TimeFmForecastItem;
     pastRetro: {
       lastStrategyDate?: string;
       lastAction?: string;
@@ -94,6 +109,11 @@ interface PerStockDeductionRetroCardProps {
       pnlImpact?: number;
       accuracyScore?: number;
       distilledLesson?: string;
+      verificationOutcome?: "EXPERIENCE" | "LESSON" | "RANDOM_NOISE";
+      verificationOutcomeLabel?: string;
+      verificationLesson?: string;
+      actualNextClosePrice?: number;
+      actualNextChangeRate?: number;
     };
     currentRecommendation?: {
       action: "BUY" | "SELL" | "HOLD" | "TRIM";
@@ -223,7 +243,7 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
           </div>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
           <div
             className={`px-3 py-1 rounded-xl text-xs font-bold flex items-center gap-1.5 ${
               isBuy
@@ -238,6 +258,35 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
               今日建议: {rec ? `${rec.action} (${rec.suggestedShares}股)` : "HOLD (0股)"}
             </span>
           </div>
+
+          {item.timefmForecast && (
+            <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 flex items-center gap-1">
+              <Zap className="w-3.5 h-3.5 text-indigo-400" />
+              <span>TimeFM: {item.timefmForecast.directionLabel}</span>
+            </span>
+          )}
+
+          {past.verificationOutcome && (
+            <span
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold border flex items-center gap-1 ${
+                past.verificationOutcome === "EXPERIENCE"
+                  ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
+                  : past.verificationOutcome === "LESSON"
+                  ? "bg-rose-500/15 text-rose-300 border-rose-500/30"
+                  : "bg-amber-500/15 text-amber-300 border-amber-500/30"
+              }`}
+            >
+              <span>
+                {past.verificationOutcomeLabel ||
+                  (past.verificationOutcome === "EXPERIENCE"
+                    ? "🟢 成功经验"
+                    : past.verificationOutcome === "LESSON"
+                    ? "🔴 失败教训"
+                    : "🎲 随机噪音")}
+              </span>
+            </span>
+          )}
+
           {item.knowledgeGraph?.spilloverAlphaScore !== undefined && (
             <span
               className={`px-2.5 py-1 rounded-lg text-xs font-bold border flex items-center gap-1 ${
@@ -273,7 +322,7 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
             }`}
           >
             <History className="w-3.5 h-3.5" />
-            <span>1. 4维走势复盘</span>
+            <span>1. 4维走势复盘 & TimeFM</span>
           </button>
 
           <button
@@ -363,6 +412,84 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
           {/* SubTab 1: 4维走势复盘 */}
           {subTab === "retro" && (
             <div className="space-y-3">
+              {/* Google TimeFM 时序大模型 AI 走势预测 */}
+              {item.timefmForecast && (
+                <div className="p-3.5 rounded-xl bg-indigo-950/20 border border-indigo-500/30 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-white flex items-center gap-1.5">
+                      <Zap className="w-4 h-4 text-indigo-400" />
+                      <span>Google TimeFM 时序大模型 · 次日走势预测 (零样本自回归)</span>
+                    </span>
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">
+                      {item.timefmForecast.directionLabel}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                    <div className="p-2 rounded-lg bg-slate-950 border border-slate-800">
+                      <div className="text-slate-400">预测目标价</div>
+                      <div className="font-bold text-white text-sm">
+                        {item.timefmForecast.predictedPrice > 0 ? `$${item.timefmForecast.predictedPrice.toFixed(2)}` : "--"}
+                      </div>
+                    </div>
+                    <div className="p-2 rounded-lg bg-slate-950 border border-slate-800">
+                      <div className="text-slate-400">预测涨跌幅</div>
+                      <div
+                        className={`font-bold text-sm ${
+                          item.timefmForecast.predictedChangeRate >= 0 ? "text-emerald-400" : "text-rose-400"
+                        }`}
+                      >
+                        {item.timefmForecast.predictedChangeRate >= 0 ? "+" : ""}
+                        {item.timefmForecast.predictedChangeRate}%
+                      </div>
+                    </div>
+                    <div className="p-2 rounded-lg bg-slate-950 border border-slate-800">
+                      <div className="text-slate-400">10%~90% 置信带</div>
+                      <div className="font-bold text-cyan-300">
+                        ${item.timefmForecast.confidenceLow} ~ ${item.timefmForecast.confidenceHigh}
+                      </div>
+                    </div>
+                    <div className="p-2 rounded-lg bg-slate-950 border border-slate-800">
+                      <div className="text-slate-400">时序动量置信度</div>
+                      <div className="font-bold text-amber-300">{item.timefmForecast.confidenceScore}%</div>
+                    </div>
+                  </div>
+
+                  <p className="text-slate-300 text-[11px] leading-relaxed bg-slate-900/90 p-2.5 rounded-lg border border-indigo-500/20">
+                    💡 <strong>时序推论</strong>: {item.timefmForecast.momentumRationale}
+                  </p>
+                </div>
+              )}
+
+              {/* 实盘三态闭环检验归因卡片 */}
+              {past.verificationLesson && (
+                <div
+                  className={`p-3.5 rounded-xl border space-y-2 ${
+                    past.verificationOutcome === "EXPERIENCE"
+                      ? "bg-emerald-950/20 border-emerald-500/30 text-emerald-200"
+                      : past.verificationOutcome === "LESSON"
+                      ? "bg-rose-950/20 border-rose-500/30 text-rose-200"
+                      : "bg-amber-950/20 border-amber-500/30 text-amber-200"
+                  }`}
+                >
+                  <div className="font-bold flex items-center justify-between text-xs">
+                    <span className="flex items-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>实盘闭环检验归因: {past.verificationOutcomeLabel || "实盘验证"}</span>
+                    </span>
+                    {past.actualNextChangeRate !== undefined && (
+                      <span className="text-[11px] font-mono font-bold bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
+                        次日真实涨跌: {past.actualNextChangeRate >= 0 ? "+" : ""}{past.actualNextChangeRate}% (收盘 ${past.actualNextClosePrice?.toFixed(2)})
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-slate-300 leading-relaxed text-[11px] bg-slate-900/80 p-2.5 rounded-lg border border-slate-800">
+                    {past.verificationLesson}
+                  </p>
+                </div>
+              )}
+
+              {/* 前次推演与盘面核验对齐 */}
               <div className="p-3 rounded-xl bg-slate-950/90 border border-slate-800 space-y-2">
                 <div className="flex items-center justify-between text-slate-400">
                   <span className="font-semibold text-white flex items-center gap-1.5">

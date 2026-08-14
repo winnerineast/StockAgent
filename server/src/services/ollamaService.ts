@@ -8,6 +8,7 @@ import {
   SingleStockIntel,
   StockFundamentals,
   StockStrategyCategory,
+  TimeFmForecastItem,
 } from "../types/stockTypes";
 import { graphQuantitativeEngine } from "./graphQuantitativeEngine";
 import { quantRiskManager } from "./quantRiskManager";
@@ -265,6 +266,8 @@ ${searxngNewsText || "盘前资讯暂未检索到显著异常，维持平稳动�
       strategyCategory?: StockStrategyCategory;
       strategyCategoryLabel?: string;
       strategyCategoryReason?: string;
+      timefmForecast?: TimeFmForecastItem;
+      verifiedPromptHistory?: string;
     }
   ): Promise<ActionItem | null> {
     const s = stockData.symbol;
@@ -275,6 +278,8 @@ ${searxngNewsText || "盘前资讯暂未检索到显著异常，维持平稳动�
     const flow = stockData.intel.capitalFlow;
     const fund = stockData.fundamentals;
     const kg = stockData.knowledgeGraph;
+    const tfm = stockData.timefmForecast;
+    const verifiedMemories = stockData.verifiedPromptHistory || "无历史实盘验证教训";
     const macroConstraint = stockData.macroPromptContext || "宏观大盘整体平稳，注意顺应主线与止损防线。";
     const categoryInfo = stockData.strategyCategoryLabel
       ? `${stockData.strategyCategoryLabel}: ${stockData.strategyCategoryReason || ""}`
@@ -294,14 +299,14 @@ ${searxngNewsText || "盘前资讯暂未检索到显著异常，维持平稳动�
       ? graphQuantitativeEngine.formatTripletsForPrompt(kg)
       : "【产业链知识图谱】: 暂未检索到扩展拓扑节点";
 
+    const tfmText = tfm
+      ? `【Google TimeFM 时序大模型 AI 走势预测】:\n- 次日预测方向: ${tfm.directionLabel}\n- 预测目标中枢: $${tfm.predictedPrice} (置信区间 [${tfm.confidenceLow}, ${tfm.confidenceHigh}])\n- 时序动量推论: ${tfm.momentumRationale}`
+      : "【Google TimeFM 时序大模型 AI 走势预测】: 暂无足够K线样本进行预测";
+
     const spilloverAlpha = kg ? (kg.spilloverAlphaScore ?? graphQuantitativeEngine.calculateSpilloverAlpha(kg)) : 0;
     const networkRisk = kg ? (kg.networkRiskScore ?? graphQuantitativeEngine.calculateNetworkRisk(kg)) : 30;
 
-    const lessonsText = stockData.lessonsLearned.length > 0
-      ? stockData.lessonsLearned.map((l, i) => `${i + 1}. ${l}`).join("\n")
-      : "无历史风控教训";
-
-    const prompt = `分析美股标的 [${s}] (${cName}) 的全要素数据，结合策略分类归属、产业链上下游拓扑与今日宏观大盘约束，评估操作方向与逻辑论据。
+    const prompt = `分析美股标的 [${s}] (${cName}) 的全要素数据，结合策略分类归属、产业链上下游拓扑、Google TimeFM 时序预测与今日宏观大盘约束，评估操作方向与逻辑论据。
 
 【策略分类归属】:
 ${categoryInfo}
@@ -312,6 +317,8 @@ ${macroConstraint}
 【盘面与持仓】:
 - 当前现价: $${curP.toFixed(2)}
 - 持仓状况: ${posInfoText}
+
+${tfmText}
 
 【基本面财报】:
 ${fundText}
@@ -324,8 +331,7 @@ ${flowText}
 
 ${kgText}
 
-【历史复盘风控教训】:
-${lessonsText}
+${verifiedMemories}
 
 输出要求:
 请以纯 JSON 格式输出以下结构 (不要包含 markdown 额外文本):
@@ -333,7 +339,7 @@ ${lessonsText}
   "action": "BUY" | "TRIM" | "HOLD" | "SELL",
   "symbol": "${s}",
   "companyName": "${cName}",
-  "rationale": "详细操作逻辑说明 (结合产业链因果传导与量化动量归因)",
+  "rationale": "详细操作逻辑说明 (结合产业链因果传导、TimeFM时序预测与实盘历史经验归因)",
   "urgency": "HIGH" | "MEDIUM" | "LOW"
 }`;
 
@@ -411,6 +417,8 @@ ${lessonsText}
       totalBudget: number;
       cashBalance: number;
       riskPreference: string;
+      timefmForecasts?: Record<string, TimeFmForecastItem>;
+      stockVerifiedHistories?: Record<string, string>;
     }
   ): Promise<OllamaDeductionResult> {
     const status = await this.getStatus();
@@ -423,7 +431,7 @@ ${lessonsText}
     // Stage A: 宏观 Chunk 推理
     const macroOverview = await this.generateMacroSummaryWithOllama(selectedModel, context.searxngNewsText);
 
-    // Stage B: 候选股票 Map Chunk 并发分段推理 (注入宏观约束与策略归属提示词)
+    // Stage B: 候选股票 Map Chunk 并发分段推理 (注入宏观约束、TimeFM预测与实盘经验库)
     const inferencePromises = context.candidateSymbols.map(async (sym) => {
       const pos = context.positions.find((p) => p.symbol.toUpperCase() === sym.toUpperCase());
       const curP =
@@ -440,6 +448,8 @@ ${lessonsText}
       };
       const kg = context.knowledgeGraphs.find((k) => k.symbol.toUpperCase() === sym.toUpperCase());
       const catMeta = context.candidateCategoryMap?.get(sym.toUpperCase());
+      const tfm = context.timefmForecasts ? context.timefmForecasts[sym.toUpperCase()] : undefined;
+      const verifiedHistory = context.stockVerifiedHistories ? context.stockVerifiedHistories[sym.toUpperCase()] : undefined;
 
       const itemRes = await this.deduceSingleStockWithOllama(selectedModel, {
         symbol: sym,
@@ -453,6 +463,8 @@ ${lessonsText}
         strategyCategory: catMeta?.category,
         strategyCategoryLabel: catMeta?.label,
         strategyCategoryReason: catMeta?.reason,
+        timefmForecast: tfm,
+        verifiedPromptHistory: verifiedHistory,
       });
 
       if (itemRes) {

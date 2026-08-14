@@ -536,6 +536,34 @@ export class MooMooAdapter {
       );
     });
   }
+
+  public async fetchTimeFmForecastsFromOpenD(
+    symbols: string[]
+  ): Promise<Record<string, any>> {
+    if (!symbols || symbols.length === 0) return {};
+    const isAlive = await openDaemonManager.checkOpenDAlive();
+    if (!isAlive) return {};
+
+    const bridgeScript = getMoomooBridgeScriptPath();
+    const cleanSyms = Array.from(new Set(symbols.map((s) => s.trim().toUpperCase()))).join(",");
+
+    return new Promise((resolve) => {
+      exec(
+        `python "${bridgeScript}" --action=timefm_forecast --symbols="${cleanSyms}"`,
+        { encoding: "utf-8", timeout: 25000, maxBuffer: 10 * 1024 * 1024 },
+        (_err: any, stdout: string) => {
+          try {
+            const data = extractJsonFromBridgeOutput(stdout);
+            if (data && data.success && data.forecasts) {
+              return resolve(data.forecasts);
+            }
+          } catch (e) {}
+          resolve({});
+        }
+      );
+    });
+  }
 }
 
 export const moomooAdapter = new MooMooAdapter();
+

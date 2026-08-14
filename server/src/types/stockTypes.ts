@@ -174,13 +174,30 @@ export interface StockKnowledgeGraphItem {
 
 export interface PastDeductionRetroPerStock {
   lastStrategyDate?: string;
-  lastAction?: "BUY" | "TRIM" | "HOLD" | "SELL";
+  lastAction?: "BUY" | "TRIM" | "HOLD" | "SELL" | string;
   lastTargetPrice?: number;
   lastStopLossPrice?: number;
   actualPriceAction?: string;
   pnlImpact?: number;
   accuracyScore?: number;
   distilledLesson?: string;
+  // 实盘三态闭环检验归因
+  verificationOutcome?: "EXPERIENCE" | "LESSON" | "RANDOM_NOISE";
+  verificationOutcomeLabel?: string;
+  verificationLesson?: string;
+  actualNextClosePrice?: number;
+  actualNextChangeRate?: number;
+}
+
+export interface TimeFmForecastItem {
+  direction: "UP" | "DOWN" | "SIDEWAYS";
+  directionLabel: string;
+  predictedPrice: number;
+  predictedChangeRate: number;
+  confidenceLow: number;
+  confidenceHigh: number;
+  confidenceScore: number;
+  momentumRationale: string;
 }
 
 export interface CommunitySentimentItem {
@@ -213,7 +230,8 @@ export interface StockDeductionRetroItem {
   fundamentals?: StockFundamentals;
   position?: StockPositionItem;
   openDSnapshot?: OpenDSnapshotItem;
-  pastRetro: PastDeductionRetroPerStock;
+  timefmForecast?: TimeFmForecastItem; // Google TimeFM 次日时序预测
+  pastRetro: PastDeductionRetroPerStock; // 实盘三态闭环检验与经验库
   currentRecommendation?: ActionItem;
 }
 

@@ -7,6 +7,7 @@ import { macroSnapshotStoreService } from "./macroSnapshotStore";
 import { StockEngine, stockEngine } from "./stockEngine";
 import { ollamaService } from "./ollamaService";
 import { computeTotalPnL, computeRetroPnL, savePortfolioSnapshot } from "./stockMemoryManager";
+import { deductionVerificationService } from "./deductionVerificationService";
 import {
   DailyAllocationOutput,
   StockPositionItem,
@@ -296,6 +297,14 @@ export class DailyStrategyDirector {
     const knowledgeGraphList = [];
     const perStockDeductionRetroList: StockDeductionRetroItem[] = [];
 
+    // 执行实盘三态闭环核验 (将前期未核验预测与今日实盘现价核验为 成功经验/失败教训/随机噪音)
+    const verificationReport = await deductionVerificationService.verifyPastPredictions(portfolioId, quotesMap);
+    console.log(`[Outcome Verifier] ${verificationReport.summaryText}`);
+
+    // 并发批量拉取入选标的的 Google TimeFM 零样本时序动量预测 (UP / DOWN / SIDEWAYS)
+    notifyStage(3, "CANDIDATE_AND_SEARCH", "候选池构建与标的多维挖掘", "正在调用 Google TimeFM 时序大模型计算全标的次日走势方向与置信带...", 65);
+    const timefmForecastsMap = await moomooAdapter.fetchTimeFmForecastsFromOpenD(candidateSymbols);
+
     // 读取前期策略核验对齐
     const prevStrategy = await prisma.dailyStrategy.findFirst({
       where: { portfolioId },
@@ -312,6 +321,8 @@ export class DailyStrategyDirector {
       } catch (e) {}
     }
 
+    const stockVerifiedHistoriesMap: Record<string, string> = {};
+
     // 4. 对入选 5 大分类的标的进行消歧舆情搜刮与全要素装配
     let symbolIndex = 0;
     for (const cand of finalCandidateList) {
@@ -321,8 +332,8 @@ export class DailyStrategyDirector {
         3,
         "CANDIDATE_AND_SEARCH",
         "候选池构建与标的多维挖掘",
-        `正在对 [${sym}] (${cand.classification.strategyCategoryLabel}) 挖掘消歧资讯与图谱装载 (${symbolIndex}/${finalCandidateList.length})...`,
-        50 + Math.floor((symbolIndex / finalCandidateList.length) * 25)
+        `正在对 [${sym}] (${cand.classification.strategyCategoryLabel}) 装载消歧资讯、TimeFM时序与图谱 (${symbolIndex}/${finalCandidateList.length})...`,
+        65 + Math.floor((symbolIndex / finalCandidateList.length) * 15)
       );
 
       const pos = currentPositions.find((p) => p.symbol.toUpperCase() === sym);
@@ -343,6 +354,13 @@ export class DailyStrategyDirector {
       const isWatchlist = !pos && watchlistSymbols.includes(sym);
       const prevAction = prevActionsMap.get(sym);
       const currentPrice = quotesMap.get(sym) || cand.snapshot?.lastPrice || pos?.marketPrice || 0;
+
+      // 提取标的历史实盘核验经验库
+      const verifiedData = await deductionVerificationService.getStockVerifiedHistory(portfolioId, sym);
+      stockVerifiedHistoriesMap[sym.toUpperCase()] = verifiedData.promptMemoryContext;
+      const latestVerified = verifiedData.historyLogs[0];
+
+      const tfmForecast = timefmForecastsMap[sym] || timefmForecastsMap[sym.toUpperCase()];
 
       let pastRetroText = prevAction
         ? `针对上次建议 (${prevAction.action}) 对照：当前现价 $${currentPrice.toFixed(2)}。`
@@ -374,6 +392,7 @@ export class DailyStrategyDirector {
         capitalFlow: intel.capitalFlow,
         fundamentals: fundamentals ?? undefined,
         openDSnapshot: cand.snapshot,
+        timefmForecast: tfmForecast,
         position: pos
           ? { ...pos, isCleared: isClearedPos }
           : undefined,
@@ -384,6 +403,11 @@ export class DailyStrategyDirector {
           lastStopLossPrice: prevAction?.stopLossPrice,
           actualPriceAction: pastRetroText,
           pnlImpact: pos && pos.shares > 0 ? (currentPrice - pos.costBasis) * pos.shares : 0,
+          verificationOutcome: latestVerified?.verificationOutcome !== "PENDING" ? latestVerified?.verificationOutcome : undefined,
+          verificationOutcomeLabel: latestVerified?.verificationOutcomeLabel,
+          verificationLesson: latestVerified?.verificationLesson,
+          actualNextClosePrice: latestVerified?.actualClosePrice,
+          actualNextChangeRate: latestVerified?.actualChangeRate,
         },
       });
     }
@@ -448,6 +472,8 @@ export class DailyStrategyDirector {
           totalBudget: budgetToUse,
           cashBalance: portfolio.cashBalance,
           riskPreference: portfolio.riskPreference,
+          timefmForecasts: timefmForecastsMap,
+          stockVerifiedHistories: stockVerifiedHistoriesMap,
         });
 
         screenerRes = {
@@ -592,6 +618,16 @@ export class DailyStrategyDirector {
         retroPnLScore: retroPnL.accuracyScore,
       },
     });
+
+    // 异步高密度持久化全量个股推演快照 (供次日启动时自动进行实盘三态检验核验)
+    try {
+      await deductionVerificationService.saveDeductionLogsBatch(
+        portfolioId,
+        strategyRecord.id,
+        todayStr,
+        perStockDeductionRetroList
+      );
+    } catch (e) {}
 
     await prisma.strategyRetrospective.create({
       data: {

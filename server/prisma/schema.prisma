@@ -153,3 +153,49 @@ model DailyMacroSnapshot {
   promptContext    String
 }
 
+model StockDeductionLog {
+  id                    String    @id @default(uuid())
+  portfolioId           String    @default("default-portfolio")
+  strategyId            String?
+  deductionDate         String    // YYYY-MM-DD
+  symbol                String
+  companyName           String?
+
+  // 1. 搜索、图谱与基本面上下文快照
+  searxngNewsJson       String    @default("[]")
+  knowledgeGraphJson    String?
+  fundamentalsJson      String?
+
+  // 2. Google TimeFM 次日时序预测
+  timefmDirection       String?   // "UP" | "DOWN" | "SIDEWAYS"
+  timefmPredictedPrice  Float?    // 预测次日现价
+  timefmPredictedChange Float?    // 预测次日涨跌幅 %
+  timefmConfidenceLow   Float?    // 10% 分位数下界
+  timefmConfidenceHigh  Float?    // 90% 分位数上界
+
+  // 3. Ollama 决策与推理论据
+  action                String    // "BUY" | "TRIM" | "HOLD" | "SELL"
+  strategyCategory      String?
+  suggestedShares       Float     @default(0)
+  triggerPrice          Float     // 当时的现价
+  targetPrice           Float?
+  stopLossPrice         Float?
+  rationale             String
+
+  // 4. 实盘检验与三态归因 (次日启动时通过 OpenD 自动回填)
+  isVerified            Boolean   @default(false)
+  verifiedAt            DateTime?
+  actualNextClosePrice  Float?    // 次日实盘实际收盘价
+  actualNextChangeRate  Float?    // 次日实盘实际涨跌幅 %
+  verificationOutcome   String?   // "EXPERIENCE" (成功经验) | "LESSON" (失败教训) | "RANDOM_NOISE" (随机噪音)
+  verificationLesson    String?   // 提炼的经验/教训描述
+  pnlImpactAmount       Float?    // 实际产生收益或规避损失金额
+
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@unique([portfolioId, deductionDate, symbol])
+  @@index([symbol, deductionDate])
+  @@index([portfolioId, deductionDate])
+}
+
