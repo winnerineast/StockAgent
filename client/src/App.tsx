@@ -5,7 +5,6 @@ import { StockKnowledgeGraphModal } from "./components/StockKnowledgeGraphModal"
 import { TradeUnlockModal } from "./components/TradeUnlockModal";
 import { OllamaDeductionModal } from "./components/OllamaDeductionModal";
 import { StageStep } from "./components/DeductionProgressStepper";
-import { Sparkles, PieChart, Eye } from "lucide-react";
 
 export default function App() {
   const [loading, setLoading] = useState<boolean>(false);
@@ -163,22 +162,44 @@ export default function App() {
     setCurrentStage({
       step: 1,
       stageId: "OPEND_CONNECT",
-      title: "MooMoo OpenD 持仓",
-      detail: "正在连接 127.0.0.1:11111 TCP 原生通道拉取持仓...",
-      progressPercent: 15,
+      title: "MooMoo OpenD 持仓自选连通",
+      detail: "正在连接 127.0.0.1:11111 TCP 原生通道拉取真实持仓与自选股...",
+      progressPercent: 20,
     });
 
-    // 开启后台真实执行 Stage 与实时模型 Context 轮询 (400ms 间隔)
+    // 开启后台真实执行 Stage 与实时模型 Context 轮询 (300ms 间隔)
+    let hasSyncedStep1 = false;
     const stagePollInterval = setInterval(async () => {
       try {
         const res = await fetch("/api/stock/strategy/stage");
         const json = await res.json();
         if (json.success && json.data) {
-          if (json.data.stage) setCurrentStage(json.data.stage);
-          if (json.data.liveDeductionPipeline) setDeductionPipeline(json.data.liveDeductionPipeline);
+          if (json.data.stage) {
+            setCurrentStage(json.data.stage);
+            // 阶段 1 完毕后立即拉取更新后的实盘持仓与自选股
+            if (json.data.stage.step > 1 && !hasSyncedStep1) {
+              hasSyncedStep1 = true;
+              fetchPortfolio();
+              fetchWatchlist();
+            }
+          }
+          if (json.data.liveDeductionPipeline) {
+            setDeductionPipeline(json.data.liveDeductionPipeline);
+          }
+          if (json.data.liveStageData) {
+            if (json.data.liveStageData.macroOverview) {
+              setMarketOverview(json.data.liveStageData.macroOverview);
+            }
+            if (json.data.liveStageData.perStockItems && json.data.liveStageData.perStockItems.length > 0) {
+              setPerStockItems(json.data.liveStageData.perStockItems);
+            }
+            if (json.data.liveStageData.screenerActions && json.data.liveStageData.screenerActions.length > 0) {
+              setScreenerActions(json.data.liveStageData.screenerActions);
+            }
+          }
         }
       } catch (e) {}
-    }, 400);
+    }, 300);
 
     try {
       const budgetToUse = overrideBudget !== undefined ? overrideBudget : (portfolioData.totalBudget || 1000);
@@ -201,9 +222,9 @@ export default function App() {
         await fetchStrategyHistory();
 
         setCurrentStage({
-          step: 6,
+          step: 5,
           stageId: "FINISHED",
-          title: "精确定量指南与走势复盘生成完毕",
+          title: "精确定量指南与策略复盘生成完毕",
           detail: "推演与复盘全脉络完成，大模型及知识图谱响应就绪",
           progressPercent: 100,
         });
@@ -311,19 +332,6 @@ export default function App() {
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 lg:px-8 py-6 space-y-6">
-        {/* Context Inspector Bar (if deduction data exists) */}
-        {deductionPipeline && (
-          <div className="flex items-center justify-end border-b border-slate-800/80 pb-3">
-            <button
-              onClick={() => setDeductionModalOpen(true)}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/20 transition-all text-xs font-semibold"
-            >
-              <Eye className="w-4 h-4 text-cyan-400" />
-              <span>推演 Context 上下文检视器</span>
-            </button>
-          </div>
-        )}
-
         {/* Unified Studio Workspace */}
         <DeductionRetroStudioTab
           netAssets={portfolioData.netAssets || 0}
@@ -347,7 +355,6 @@ export default function App() {
           onOpenKnowledgeGraph={handleOpenKnowledgeGraph}
           onOpenUnlockModal={() => setUnlockModalOpen(true)}
           onExecuteRebalance={handleExecuteRebalance}
-          onOpenPipelineModal={() => setDeductionModalOpen(true)}
         />
       </main>
 

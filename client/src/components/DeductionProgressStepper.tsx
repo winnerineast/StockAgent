@@ -21,27 +21,24 @@ export interface StageStep {
 interface DeductionProgressStepperProps {
   currentStage: StageStep | null;
   loading: boolean;
-  onOpenPipelineModal: () => void;
 }
 
-export const STAGES_LIST: Array<{
+const STAGES_LIST: Array<{
   step: number;
   stageId: string;
   title: string;
   icon: any;
 }> = [
-  { step: 1, stageId: "OPEND_CONNECT", title: "OpenD 持仓连通", icon: Activity },
-  { step: 2, stageId: "MACRO_SEARCH", title: "全网宏观与热门搜刮", icon: Search },
-  { step: 3, stageId: "CANDIDATE_ASSEMBLE", title: "合成候选股票池", icon: Layers },
-  { step: 4, stageId: "STOCK_DEEP_SEARCH", title: "单标的消歧多维挖掘", icon: Search },
-  { step: 5, stageId: "MAP_REDUCE_DEDUCTION", title: "Map-Reduce 分段 LLM", icon: Bot },
-  { step: 6, stageId: "FINISHED", title: "精确定量指南生成", icon: Sparkles },
+  { step: 1, stageId: "OPEND_CONNECT", title: "OpenD 持仓自选连通", icon: Activity },
+  { step: 2, stageId: "MACRO_SEARCH", title: "全网宏观板块搜刮", icon: Search },
+  { step: 3, stageId: "CANDIDATE_AND_SEARCH", title: "候选池与标的多维挖掘", icon: Layers },
+  { step: 4, stageId: "OLLAMA_DEDUCTION", title: "Ollama 大模型融合推演", icon: Bot },
+  { step: 5, stageId: "FINISHED", title: "精确定量指南生成", icon: Sparkles },
 ];
 
 export const DeductionProgressStepper: React.FC<DeductionProgressStepperProps> = ({
   currentStage,
   loading,
-  onOpenPipelineModal,
 }) => {
   if (!loading && !currentStage) return null;
 
@@ -68,14 +65,6 @@ export const DeductionProgressStepper: React.FC<DeductionProgressStepperProps> =
             <p className="text-xs text-slate-400">{currentStage?.detail || "正在处理..."}</p>
           </div>
         </div>
-
-        <button
-          onClick={onOpenPipelineModal}
-          className="px-3 py-1.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 text-xs font-semibold transition-all flex items-center gap-1.5"
-        >
-          <Bot className="w-3.5 h-3.5" />
-          <span>查看 Ollama 输入/输出 Context</span>
-        </button>
       </div>
 
       {/* Progress Bar */}
@@ -87,7 +76,7 @@ export const DeductionProgressStepper: React.FC<DeductionProgressStepperProps> =
       </div>
 
       {/* Step Badges */}
-      <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
         {STAGES_LIST.map((stage) => {
           const Icon = stage.icon;
           const isDone = currentStep > stage.step || progressPct === 100;

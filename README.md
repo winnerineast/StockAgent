@@ -2,37 +2,101 @@
 
 **English** | [中文文档](README_CN.md)
 
-> Full-stack US stock intelligence, deduction, and retrospective trading platform powered by **MooMoo OpenD Native TCP API**, **Local Docker SearXNG Fast Web Search**, and **Hardware-Aware Ollama Local LLMs**.
+> Full-stack US stock intelligence, multi-factor deduction, and retrospective trading platform powered by **100% Real-Time MooMoo OpenD Native TCP Data**, **Local Docker SearXNG Web Search (Bloomberg/CNBC/Reuters)**, and **Hardware-Aware Ollama Local LLMs**.
 
 ---
 
 ## 🌟 Core Architecture & Key Features
 
-### 1. Unified Deduction & Retrospective Studio (Single-Stock Panoramic View)
-- **4 Core Elements per Stock**: Combines forward deduction with historical retrospective trading for each stock in portfolio/watchlist:
-  1. 🧠 **Exclusive Stock Knowledge Graph**: Entity nodes (suppliers, competitors, macro trends, sector concepts) and edge relations with interactive visualization and custom node insertion.
-  2. 📰 **SearXNG Pre-Market News Catalysts**: Instant pre-market news aggregation via local Docker SearXNG engine.
-  3. 💼 **MooMoo Real-Time Positions & Funds**: Live share counts, average cost, current price, unrealized PnL, and position weight.
-  4. 🔄 **Past Deduction vs. Actual Price Action Retro**: Compares prior deduction target/stop-loss boundaries against actual price movements to distill disciplined risk management lessons.
+```mermaid
+flowchart TD
+    subgraph S1 [Step 1: OpenD Live Positions & Assets]
+        A[OpenD Native TCP 11111] -->|Real-time Pull| B[Live Positions + Cash Balance + Watchlist]
+    end
 
-### 2. Visual Deduction Pipeline Stepper
-- **6-Stage Real-Time Pipeline**:
-  - `Step 1`: Fetch live portfolio & watchlist via MooMoo OpenD.
-  - `Step 2`: Search pre-market US market news via local SearXNG Docker container.
-  - `Step 3`: Load per-stock trading Knowledge Graph.
-  - `Step 4`: Reconcile past target/stop-loss prices against actual market retro PnL.
-  - `Step 5`: ⚡ **Full Context Fusion Reasoning via Ollama Local LLM**.
-  - `Step 6`: Generate precise quantitative position sizing guidance & risk alerts.
-- **LLM Context Payload Inspector**: Inspect raw prompt payloads, knowledge graph context, SearXNG news feeds, and raw Ollama JSON responses in real time.
+    subgraph S2 [Step 2: Macro News & Market Direction]
+        C[SearXNG Docker 8088] -->|Directed Query| D[Bloomberg / CNBC / Reuters Headlines]
+        D -->|Ollama Synthesis| E[Macro Sentiment Score + Star Sectors + Trading Directives + Distilled Prompt Context]
+    end
 
-### 3. Hardware-Aware LLM Selector
-- **Automatic Hardware Sensing**: Automatically detects GPU VRAM, System RAM, and CPU cores (e.g., `💻 63.8GB RAM | NVIDIA GeForce RTX 4090 (24GB VRAM)`).
-- **Smart Model Recommendation**: Evaluates local hardware capacity and financial reasoning benchmarks to suggest optimal local models (e.g., **`⭐ [Recommended] qwen3.6:27b`** 27B parameter structured quantization model).
-- **Seamless Model Switching**: Choose from all locally pulled Ollama models via dropdown selector, taking effect on the next deduction run.
+    subgraph S3 [Step 3: US Universe Multi-Factor 5-Strategy Classification]
+        F[Dynamic US Universe 349 Plates] --> G[Priority: 1. Holdings > 2. Watchlist > 3. US Universe]
+        G --> H[OpenD 52-Week High/Low, PE, EPS, Net Profit, Turnover & Capital Inflows]
+        H --> I{Multi-Factor 5-Strategy Sieve}
+        I -->|📉 Oversold Buy| J1[Drawdown >= 15% & Fair Valuation]
+        I -->|💎 Fundamental Buy| J2[OpenD PE <= 38 & Profitable]
+        I -->|🚀 News Catalyst Buy| J3[Pre-market Gap or Bullish News]
+        I -->|🏦 Capital Inflow Buy| J4[Institutional Large-order Inflow]
+        I -->|👀 Watch & Wait| J5[Holding / Watchlist Box-range Bottoms]
+        I -->|Non-qualifying| J6[❌ Skip Directly]
+        J1 & J2 & J3 & J4 & J5 --> K[Screened Candidates]
+        K -.->|Async Non-blocking| L[Create/Update Exclusive Knowledge Graphs]
+    end
 
-### 4. SearXNG Self-Healing & MooMoo OpenD Native Integration
-- **SearXNG Health Probe**: Automatically checks local SearXNG (`http://127.0.0.1:8088`) health, self-healing by launching the background Docker container if offline.
-- **MooMoo Trade Unlock**: Supports dynamic MD5 password entry for trading authorization, updating UI status to **`Unlocked`** with safety guards to prevent accidental order execution.
+    subgraph S4 [Step 4: Ollama LLM Map-Reduce Fusion Deduction]
+        E & K --> M[Inject Macro Context & Strategy Categories]
+        M --> N[Concurrent Map-Reduce Reasoning for Quantitative Rebalance Guide]
+    end
+
+    subgraph S5 [Step 5: Execution Matrix & Retrospective Storage]
+        N --> O[5-Strategy Pills Filter + Rebalance Decision Matrix + Target/Stop-loss Discipline]
+    end
+```
+
+---
+
+### 1. 100% Real OpenD Official Data & Zero Hardcoding (No Mock / Hardcoded Data)
+- **Zero Static Constants**: All static ticker lists and dummy fallback numbers (`100.0`, `1000.0`) are completely removed.
+- **Dynamic Universe Retrieval**: Automatically fetches the live universe across **349 US official sectors** and user watchlists via OpenD SDK (`get_user_security`, `get_plate_stock`, `get_stock_basicinfo`).
+- **Deep Valuation & Institutional Flow**:
+  - `highest52weeks_price`, `lowest52weeks_price`, `pe_ratio`, `pe_ttm_ratio`, `pb_ratio`, `earning_per_share`, `net_profit`, `turnover_rate`.
+  - Institutional capital flow metrics (`main_in_flow`, `in_flow`).
+
+---
+
+### 2. Multi-Factor 5-Strategy Classification Engine
+Strictly screens candidate US stocks into 5 clear actionable categories:
+1. 📉 **Oversold Buy (`OVERSOLD_BUY`)**: ≥15% deep pullback from 52-week high with reasonable valuation for high risk-reward swing setups.
+2. 💎 **Fundamental Buy (`FUNDAMENTAL_BUY`)**: OpenD PE ≤ 38, positive EPS, and stable net profits.
+3. 🚀 **News Catalyst Buy (`NEWS_CATALYST_BUY`)**: Major catalyst news from Bloomberg/CNBC/Reuters, sentiment resonance, or pre-market gap ≥ 1.5%.
+4. 🏦 **Capital Inflow Buy (`CAPITAL_INFLOW_BUY`)**: Persistent institutional large-order capital inflows via OpenD order-flow data.
+5. 👀 **Watch & Wait (`WATCH_AND_WAIT`)**: Existing holdings in healthy consolidation ranges, maintaining core positioning without chasing highs.
+- **Auto-Skip**: Any ticker not meeting these 5 strategies is immediately skipped to conserve compute resources.
+- **Strict Prioritization**: Live Holdings (P1) > User Watchlist (P2) > Whole Market Universe (P3).
+
+---
+
+### 3. Background Asynchronous Knowledge Graph Synchronization
+- **Non-blocking Concurrency**: When stocks qualify into the candidate deduction pool, the system triggers asynchronous background tasks (`stockKnowledgeGraphStore`) via `setImmediate`.
+- **Knowledge Graphs Auto-enrichment**: Automatically ingests latest catalyst news, strategy rationale, and institutional capital flow nodes into each stock's interactive graph without blocking the main deduction thread.
+
+---
+
+### 4. SearXNG Macro Sector & Sentiment Intelligence
+- **Targeted Authoritative Feeds**: Queries Bloomberg, CNBC, and Reuters for real-time market drivers.
+- **Market Sentiment Badge & Star Sectors**: Automatically computes sentiment scores (e.g. `Bullish 75`, `Defensive 35`, `Neutral 50`) and highlights hot thematic sectors (AI compute, semiconductors, defense).
+- **Macro Trading Directives**: Synthesizes strategy bias, position scaling pace, and risk containment rules, distilling them into downstream LLM prompt context.
+
+---
+
+### 5. Synchronized 5-Step Pipeline with Reactive Tri-State UI
+- **Visual Deduction Pipeline Stepper (`DeductionProgressStepper`)**: Tracks real-time percentage progress across 5 standardized stages:
+  - `Step 1`: **OpenD Position & Asset Connection**
+  - `Step 2`: **SearXNG Macro & Star Sector Harvesting**
+  - `Step 3`: **Candidate Multi-Factor Sieve & 5-Strategy Classification**
+  - `Step 4`: **Ollama LLM Map-Reduce Fusion Deduction**
+  - `Step 5`: **Quantitative Rebalance Guide & Retrospective Storage**
+- **Reactive Tri-State Synchronization (`StepSyncOverlay`)**:
+  - ⚡ **`ACTIVE`**: Highlights the currently executing card with pulsing glow, rotating spinner, and real-time backend stage details.
+  - ⏳ **`PENDING`**: Applies a subtle frosted glass effect indicating `⏳ Queued · Waiting for Step N`.
+  - ✓ **`DONE`**: Automatically lifts overlay and reveals live updated figures immediately.
+
+---
+
+### 6. Hardware-Aware Ollama Model Selector
+- **Automatic Hardware Sensing**: Detects local GPU VRAM, RAM, and CPU threads (e.g., `💻 63.8GB RAM | NVIDIA GeForce RTX 4090 (24GB VRAM)`).
+- **Smart Model Recommendation**: Evaluates financial reasoning capabilities and structured JSON outputs to suggest top models (e.g., **`⭐ [Recommended] qwen3.6:27b`**).
+- **Map-Reduce Parallelism**: Scales model inference across large candidate sets with structured JSON schemas and fallbacks.
 
 ---
 
@@ -43,17 +107,18 @@
 - **Docker** (For SearXNG local search container)
 - **Ollama**: Running locally at `http://127.0.0.1:11434`
 - **MooMoo OpenD**: Running locally at `127.0.0.1:11111`
+- **Python**: `3.9+` with `moomoo-api` installed (`pip install moomoo-api`)
 
 ### 2. Installation & Running
 
 ```bash
-# Install root, frontend, and backend dependencies
+# 1. Install root, frontend, and backend dependencies
 npm install
 
-# Initialize SQLite database schema
+# 2. Initialize SQLite database schema
 npm run db:push
 
-# Start development server (runs backend on 3001 and frontend on 3000 concurrently)
+# 3. Start development server (runs backend on 3001 and frontend on 3000 concurrently)
 npm run dev
 ```
 
@@ -67,12 +132,13 @@ Open your browser and navigate to: `http://localhost:3000`
 StockAgent/
 ├── client/                     # React + Vite + TailwindCSS SPA frontend
 │   ├── src/
-│   │   ├── components/         # Studio views and modal components
+│   │   ├── components/         # Studio views, Stepper, 5-in-1 Cards & Overlays
 │   │   └── App.tsx             # State manager and Studio routes
 ├── server/                     # Node.js + Express + Prisma backend
 │   ├── src/
-│   │   ├── routes/             # RESTful API endpoints
-│   │   └── services/           # MooMoo OpenD, Ollama LLM & SearXNG services
+│   │   ├── routes/             # RESTful API endpoints (/api/stock/...)
+│   │   ├── services/           # OpenD Adapter, Ollama Service, SearXNG Service, Knowledge Graph
+│   │   └── types/              # TypeScript definitions for 5 strategies & pipeline stages
 │   └── prisma/                 # SQLite database schema
 ├── graft/                      # Structured code context graph by Graft (Git Ignored)
 ├── .gitignore                  # Git ignore rules
@@ -83,73 +149,7 @@ StockAgent/
 
 ## 🗺️ Code Context Graph by Graft
 
-This project utilizes [NanoNets Graft](https://github.com/NanoNets/Graft) to construct a structured code context graph (`graft/`). Powered by tree-sitter AST analysis, Graft indexes **28 files**, **105 core symbols**, and **235 dependency edges**, enabling AI agents and developers to quickly orient themselves within the codebase.
-
-### 1. Full-Stack Architecture Diagram (Mermaid)
-
-```mermaid
-graph TD
-    subgraph Frontend ["Frontend (client/src)"]
-        Main["main.tsx"] --> App["App.tsx (Hub: fetchPortfolio, handleGenerateStrategy)"]
-        App --> HeaderBar["components/HeaderBar.tsx"]
-        App --> Screener["components/StockScreenerTab.tsx"]
-        App --> StudioTab["components/DeductionRetroStudioTab.tsx (Hub)"]
-        App --> PosTab["components/PositionManagerTab.tsx"]
-        App --> RetroTab["components/RetrospectiveTab.tsx"]
-        App --> OllamaModal["components/OllamaDeductionModal.tsx"]
-        App --> KGModal["components/StockKnowledgeGraphModal.tsx"]
-        App --> UnlockModal["components/TradeUnlockModal.tsx"]
-        StudioTab --> Stepper["components/DeductionProgressStepper.tsx"]
-        StudioTab --> RetroCard["components/PerStockDeductionRetroCard.tsx"]
-    end
-
-    subgraph Backend ["Backend (server/src)"]
-        ServerIndex["index.ts"] --> StockRoutes["routes/stockRoutes.ts"]
-        
-        StockRoutes --> StrategyDirector["services/dailyStrategyDirector.ts (Orchestrator)"]
-        StockRoutes --> MooMooAdapter["services/moomooAdapter.ts (Hub: makeOpenDPacket)"]
-        StockRoutes --> OllamaService["services/ollamaService.ts (LLM Engine)"]
-        StockRoutes --> SearXNGService["services/searxngSearchService.ts (Search Engine)"]
-        StockRoutes --> KGStore["services/stockKnowledgeGraphStore.ts (KG Manager)"]
-        StockRoutes --> OpenDaemon["services/openDaemonManager.ts (Daemon Guard)"]
-        
-        StrategyDirector --> MooMooAdapter
-        StrategyDirector --> OllamaService
-        StrategyDirector --> SearXNGService
-        StrategyDirector --> KGStore
-        StrategyDirector --> StockMemory["services/stockMemoryManager.ts (PnL & Retro)"]
-        StrategyDirector --> StockEngine["services/stockEngine.ts"]
-        StrategyDirector --> OpenDaemon
-        
-        MooMooAdapter --> MooMooBridge["services/moomoo_bridge.py (Protobuf API)"]
-        MooMooAdapter --> OpenDaemon
-    end
-
-    subgraph Infrastructure ["Infrastructure & External Services"]
-        Prisma["db/prisma.ts (SQLite DB)"]
-        StockRoutes --> Prisma
-        StrategyDirector --> Prisma
-        MooMooAdapter --> Prisma
-        SearXNGService --> Prisma
-        KGStore --> Prisma
-        StockMemory --> Prisma
-        
-        SearXNGService --> SearXNGDocker["SearXNG (Docker http://127.0.0.1:8088)"]
-        OllamaService --> OllamaLocal["Ollama LLM (http://127.0.0.1:11434)"]
-        MooMooAdapter --> OpenDNative["MooMoo OpenD (127.0.0.1:11111)"]
-    end
-```
-
-### 2. Key Hubs and Hotspots
-
-Identified by Graft topological analysis:
-
-- **Frontend Entrypoint**: `App.tsx` (`fetchPortfolio`, `fetchRetrospectives`, `handleGenerateStrategy`) dispatches state to tabs and modals.
-- **Deduction Orchestration**: `dailyStrategyDirector.ts` (`generateDailyStrategy`) coordinates portfolio fetching, SearXNG search, knowledge graphs, and Ollama context fusion.
-- **Quotes & Trading Adapter**: `moomooAdapter.ts` (`makeOpenDPacket`, `parseOpenDPackets`, `queryRealProtobufPortfolio`) handles MooMoo OpenD native TCP packets and Python bridging.
-- **Hardware & Search Services**: `ollamaService.ts` (hardware detection & model ranking) and `searxngSearchService.ts` (Docker health probing & pre-market news retrieval).
-
-### 3. Common Graft Commands
+This project utilizes [NanoNets Graft](https://github.com/NanoNets/Graft) to construct a structured code context graph (`graft/`), indexing files, core symbols, and dependency edges.
 
 ```bash
 # 1. Rebuild / update the local code context graph (updates graft/ directory)
@@ -157,12 +157,6 @@ npx @nanonets/graft build
 
 # 2. Output token-budgeted repository orientation map and key hubs
 npx @nanonets/graft map
-
-# 3. Serve an interactive visual interface for the context graph
-npx @nanonets/graft viz
-
-# 4. Trace callers and references for a specific symbol
-npx @nanonets/graft callers handleGenerateStrategy
 ```
 
 ---

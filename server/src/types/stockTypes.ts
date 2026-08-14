@@ -9,6 +9,38 @@ export interface StockPositionItem {
   clearedDate?: string;
 }
 
+export type StockStrategyCategory =
+  | "OVERSOLD_BUY"        // 1. 超跌建仓
+  | "FUNDAMENTAL_BUY"     // 2. 基本面亮眼建仓
+  | "NEWS_CATALYST_BUY"   // 3. 消息面强劲建仓
+  | "CAPITAL_INFLOW_BUY"  // 4. 近期大资金进入建仓
+  | "WATCH_AND_WAIT";     // 5. 可以观望
+
+export interface OpenDSnapshotItem {
+  symbol: string;
+  name: string;
+  lastPrice: number;
+  openPrice?: number;
+  highPrice?: number;
+  lowPrice?: number;
+  prevClosePrice?: number;
+  highest52WeeksPrice?: number;
+  lowest52WeeksPrice?: number;
+  peRatio?: number;
+  peTtmRatio?: number;
+  pbRatio?: number;
+  netProfit?: number;
+  earningPerShare?: number;
+  totalMarketVal?: number;
+  turnoverRate?: number;
+  prePrice?: number;
+  preChangeRate?: number;
+  afterPrice?: number;
+  afterChangeRate?: number;
+  capitalInflow?: number;
+  mainCapitalInflow?: number;
+}
+
 export interface ActionItem {
   action: "BUY" | "SELL" | "HOLD" | "TRIM";
   symbol: string;
@@ -29,6 +61,9 @@ export interface ActionItem {
   isOversoldOpportunity?: boolean;
   oversoldReason?: string;
   fundamentalScore?: number;
+  strategyCategory?: StockStrategyCategory;
+  strategyCategoryLabel?: string;
+  strategyCategoryReason?: string;
 }
 
 export interface RiskAlert {
@@ -143,12 +178,16 @@ export interface StockDeductionRetroItem {
   companyName?: string;
   isCleared?: boolean;
   candidateCategory?: "EXISTING_HOLDING" | "WATCHLIST" | "MACRO_CANDIDATE";
+  strategyCategory?: StockStrategyCategory;
+  strategyCategoryLabel?: string;
+  strategyCategoryReason?: string;
   knowledgeGraph: StockKnowledgeGraphItem;
   latestNews: string[];
   communitySentiment?: CommunitySentimentItem;
   capitalFlow?: CapitalFlowItem;
   fundamentals?: StockFundamentals;
   position?: StockPositionItem;
+  openDSnapshot?: OpenDSnapshotItem;
   pastRetro: PastDeductionRetroPerStock;
   currentRecommendation?: ActionItem;
 }
@@ -159,9 +198,8 @@ export interface StrategyProgressStage {
   stageId:
     | "OPEND_CONNECT"
     | "MACRO_SEARCH"
-    | "CANDIDATE_ASSEMBLE"
-    | "STOCK_DEEP_SEARCH"
-    | "MAP_REDUCE_DEDUCTION"
+    | "CANDIDATE_AND_SEARCH"
+    | "OLLAMA_DEDUCTION"
     | "FINISHED";
   title: string;
   detail: string;
@@ -178,8 +216,39 @@ export interface RetroPnLResult {
   lessonsLearned: string[];
 }
 
+export interface MacroMarketIntel {
+  sentimentMood: "BULLISH" | "BEARISH" | "NEUTRAL" | "VOLATILE";
+  sentimentScore: number; // 0 - 100
+  summaryHeadline: string;
+  starSectors: string[];
+  keyBulletPoints: Array<{
+    title: string;
+    snippet: string;
+    source: string;
+    url?: string;
+  }>;
+  macroTradingStance: {
+    bias: string;
+    positionStrategy: string;
+    riskWarning: string;
+  };
+  distilledPromptContext: string;
+}
+
+export interface DeductionPipelineData {
+  modelUsed: string;
+  promptContextText: string;
+  knowledgeGraphContext: string;
+  searxngNewsContext: string;
+  positionsContext: string;
+  lessonsContext: string;
+  rawOllamaOutput?: string;
+}
+
+
 export interface DailyAllocationOutput {
   marketOverview: string;
+  macroIntel?: MacroMarketIntel;
   existingPositionGuidance: string;
   newPositionGuidance: string;
   actions: ActionItem[];

@@ -59,6 +59,9 @@ interface PerStockDeductionRetroCardProps {
     symbol: string;
     companyName?: string;
     candidateCategory?: "EXISTING_HOLDING" | "WATCHLIST" | "MACRO_CANDIDATE";
+    strategyCategory?: "OVERSOLD_BUY" | "FUNDAMENTAL_BUY" | "NEWS_CATALYST_BUY" | "CAPITAL_INFLOW_BUY" | "WATCH_AND_WAIT";
+    strategyCategoryLabel?: string;
+    strategyCategoryReason?: string;
     knowledgeGraph: {
       nodes: KnowledgeNode[];
       edges: KnowledgeEdge[];
@@ -136,8 +139,23 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
             </span>
           </div>
           <div>
-            <div className="font-bold text-white text-sm flex items-center gap-2">
+            <div className="font-bold text-white text-sm flex items-center gap-2 flex-wrap">
               <span>{item.companyName || item.symbol}</span>
+              {item.strategyCategoryLabel && (
+                <span className={`px-2 py-0.5 text-[11px] font-bold rounded-md border ${
+                  item.strategyCategory === "OVERSOLD_BUY"
+                    ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/40"
+                    : item.strategyCategory === "FUNDAMENTAL_BUY"
+                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                    : item.strategyCategory === "NEWS_CATALYST_BUY"
+                    ? "bg-indigo-500/20 text-indigo-300 border-indigo-500/40"
+                    : item.strategyCategory === "CAPITAL_INFLOW_BUY"
+                    ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                    : "bg-slate-800 text-slate-300 border-slate-700"
+                }`}>
+                  {item.strategyCategoryLabel}
+                </span>
+              )}
               {pos && pos.shares > 0 ? (
                 <span className="px-2 py-0.5 text-[11px] font-semibold rounded-md bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
                   持仓中 ({pos.shares}股)
@@ -148,10 +166,15 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
                 </span>
               ) : (
                 <span className="px-2 py-0.5 text-[11px] font-semibold rounded-md bg-slate-800 text-slate-400 border border-slate-700">
-                  候选观察标的
+                  全美股精选
                 </span>
               )}
             </div>
+            {item.strategyCategoryReason && (
+              <p className="text-[11px] text-cyan-200/90 font-medium mt-1 leading-snug">
+                💡 {item.strategyCategoryReason}
+              </p>
+            )}
 
             {pos && pos.shares > 0 ? (
               <div className="flex flex-wrap items-center gap-2.5 text-xs text-slate-300 mt-1.5">
@@ -193,28 +216,28 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
           </div>
         </div>
 
-        {rec && (
-          <div className="flex items-center gap-2 shrink-0">
-            <div
-              className={`px-3 py-1 rounded-xl text-xs font-bold flex items-center gap-1.5 ${
-                isBuy
-                  ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40"
-                  : isTrim
-                  ? "bg-rose-500/20 text-rose-400 border border-rose-500/40"
-                  : "bg-slate-800 text-slate-300 border border-slate-700"
-              }`}
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>今日建议: {rec.action} ({rec.suggestedShares}股)</span>
-            </div>
-            <button
-              onClick={() => onOpenKnowledgeGraph(item.symbol)}
-              className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-700 text-cyan-400 hover:bg-cyan-500/10 text-xs transition-all"
-            >
-              操盘图谱
-            </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <div
+            className={`px-3 py-1 rounded-xl text-xs font-bold flex items-center gap-1.5 ${
+              isBuy
+                ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40"
+                : isTrim
+                ? "bg-rose-500/20 text-rose-400 border border-rose-500/40"
+                : "bg-slate-800 text-slate-300 border border-slate-700"
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>
+              今日建议: {rec ? `${rec.action} (${rec.suggestedShares}股)` : "HOLD (0股)"}
+            </span>
           </div>
-        )}
+          <button
+            onClick={() => onOpenKnowledgeGraph(item.symbol)}
+            className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-700 text-cyan-400 hover:bg-cyan-500/10 text-xs transition-all"
+          >
+            操盘图谱
+          </button>
+        </div>
       </div>
 
       {/* SubTab Header */}

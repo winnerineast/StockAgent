@@ -25,6 +25,9 @@ interface ActionItem {
   targetPrice?: number;
   stopLossPrice?: number;
   riskRewardRatio?: number;
+  strategyCategory?: string;
+  strategyCategoryLabel?: string;
+  strategyCategoryReason?: string;
 }
 
 interface WatchlistItem {
@@ -143,8 +146,13 @@ export const StockScreenerTab: React.FC<StockScreenerTabProps> = ({
               {/* Header */}
               <div className="flex items-start justify-between">
                 <div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-lg font-bold text-white tracking-wide">{action.symbol}</span>
+                    {action.strategyCategoryLabel && (
+                      <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                        {action.strategyCategoryLabel}
+                      </span>
+                    )}
                     <span
                       className={`px-2 py-0.5 rounded-md text-[11px] font-bold ${
                         isBuy
@@ -158,6 +166,11 @@ export const StockScreenerTab: React.FC<StockScreenerTabProps> = ({
                     </span>
                   </div>
                   <p className="text-xs text-slate-400 mt-0.5">{action.companyName || action.symbol}</p>
+                  {action.strategyCategoryReason && (
+                    <p className="text-[11px] text-cyan-200/90 font-medium mt-1">
+                      💡 {action.strategyCategoryReason}
+                    </p>
+                  )}
                 </div>
 
                 <button

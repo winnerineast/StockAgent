@@ -7,6 +7,7 @@ import {
   StockKnowledgeGraphItem,
   SingleStockIntel,
   StockFundamentals,
+  StockStrategyCategory,
 } from "../types/stockTypes";
 
 export interface HardwareInfo {
@@ -225,6 +226,7 @@ ${searxngNewsText || "盘前资讯暂未检索到显著异常，维持平稳动�
       const resp = await fetch(`${this.baseUrl}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(15000),
         body: JSON.stringify({
           model: modelName,
           messages: [{ role: "user", content: prompt }],
@@ -257,6 +259,10 @@ ${searxngNewsText || "盘前资讯暂未检索到显著异常，维持平稳动�
       knowledgeGraph?: StockKnowledgeGraphItem;
       fundamentals?: StockFundamentals;
       lessonsLearned: string[];
+      macroPromptContext?: string;
+      strategyCategory?: StockStrategyCategory;
+      strategyCategoryLabel?: string;
+      strategyCategoryReason?: string;
     }
   ): Promise<ActionItem | null> {
     const s = stockData.symbol;
@@ -267,6 +273,10 @@ ${searxngNewsText || "盘前资讯暂未检索到显著异常，维持平稳动�
     const flow = stockData.intel.capitalFlow;
     const fund = stockData.fundamentals;
     const kg = stockData.knowledgeGraph;
+    const macroConstraint = stockData.macroPromptContext || "宏观大盘整体平稳，注意顺应主线与止损防线。";
+    const categoryInfo = stockData.strategyCategoryLabel
+      ? `${stockData.strategyCategoryLabel}: ${stockData.strategyCategoryReason || ""}`
+      : "全美股精选标的";
 
     const posInfoText = pos && pos.shares > 0
       ? `目前持仓 ${pos.shares} 股，成本价 $${pos.costBasis.toFixed(2)}，浮动盈亏 ${(((curP - pos.costBasis) / pos.costBasis) * 100).toFixed(1)}%`
@@ -286,7 +296,13 @@ ${searxngNewsText || "盘前资讯暂未检索到显著异常，维持平稳动�
       ? stockData.lessonsLearned.map((l, i) => `${i + 1}. ${l}`).join("\n")
       : "无历史风控教训";
 
-    const prompt = `分析美股标的 [${s}] (${cName}) 的全要素数据，给出今日操作建议与止盈止损价格。
+    const prompt = `分析美股标的 [${s}] (${cName}) 的全要素数据，结合策略分类归属与今日宏观大盘约束，给出今日定量操作建议与止盈止损价格。
+
+【策略分类归属】:
+${categoryInfo}
+
+【大盘宏观背景与策略约束】:
+${macroConstraint}
 
 【盘面与持仓】:
 - 当前现价: $${curP.toFixed(2)}
@@ -327,6 +343,7 @@ ${lessonsText}
       const resp = await fetch(`${this.baseUrl}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(15000),
         body: JSON.stringify({
           model: modelName,
           messages: [{ role: "user", content: prompt }],
@@ -354,11 +371,14 @@ ${lessonsText}
             suggestedShares: Number(jsonParsed.suggestedShares || 0),
             estimatedPrice: curP,
             estimatedAmount: Number(((jsonParsed.suggestedShares || 0) * curP).toFixed(2)),
-            rationale: jsonParsed.rationale || `基于 [${s}] 盘面现价 $${curP} 与全维度资讯推演`,
+            rationale: jsonParsed.rationale || `基于 [${s}] 盘面现价 $${curP} 与策略归属 (${categoryInfo}) 推演`,
             urgency: jsonParsed.urgency || "MEDIUM",
             targetPrice: jsonParsed.targetPrice ? Number(jsonParsed.targetPrice) : Number((curP * 1.12).toFixed(2)),
             stopLossPrice: jsonParsed.stopLossPrice ? Number(jsonParsed.stopLossPrice) : Number((curP * 0.92).toFixed(2)),
             riskRewardRatio: jsonParsed.riskRewardRatio ? Number(jsonParsed.riskRewardRatio) : 2.0,
+            strategyCategory: stockData.strategyCategory,
+            strategyCategoryLabel: stockData.strategyCategoryLabel,
+            strategyCategoryReason: stockData.strategyCategoryReason,
           };
         }
       }
@@ -378,6 +398,8 @@ ${lessonsText}
       candidateStockIntels: Map<string, SingleStockIntel>;
       quotesMap: Map<string, number>;
       searxngNewsText: string;
+      macroPromptContext?: string;
+      candidateCategoryMap?: Map<string, { category: StockStrategyCategory; label: string; reason: string }>;
       knowledgeGraphs: StockKnowledgeGraphItem[];
       lessonsLearned: string[];
       totalBudget: number;
@@ -395,15 +417,15 @@ ${lessonsText}
     // Stage A: 宏观 Chunk 推理
     const macroOverview = await this.generateMacroSummaryWithOllama(selectedModel, context.searxngNewsText);
 
-    // Stage B: 候选股票 Map Chunk 分段推理
-    const actions: ActionItem[] = [];
-    const riskAlerts: RiskAlert[] = [];
-
-    for (const sym of context.candidateSymbols) {
-      const curP = context.quotesMap.get(sym.toUpperCase()) || 0;
-      if (curP <= 0) continue;
-
+    // Stage B: 候选股票 Map Chunk 并发分段推理 (注入宏观约束与策略归属提示词)
+    const inferencePromises = context.candidateSymbols.map(async (sym) => {
       const pos = context.positions.find((p) => p.symbol.toUpperCase() === sym.toUpperCase());
+      const curP =
+        context.quotesMap.get(sym.toUpperCase()) ||
+        pos?.marketPrice ||
+        pos?.costBasis ||
+        0;
+
       const intel = context.candidateStockIntels.get(sym.toUpperCase()) || {
         symbol: sym,
         latestNews: [],
@@ -411,6 +433,7 @@ ${lessonsText}
         capitalFlow: { trend: "NEUTRAL", description: "未知" },
       };
       const kg = context.knowledgeGraphs.find((k) => k.symbol.toUpperCase() === sym.toUpperCase());
+      const catMeta = context.candidateCategoryMap?.get(sym.toUpperCase());
 
       const itemRes = await this.deduceSingleStockWithOllama(selectedModel, {
         symbol: sym,
@@ -420,23 +443,82 @@ ${lessonsText}
         intel,
         knowledgeGraph: kg,
         lessonsLearned: context.lessonsLearned,
+        macroPromptContext: context.macroPromptContext,
+        strategyCategory: catMeta?.category,
+        strategyCategoryLabel: catMeta?.label,
+        strategyCategoryReason: catMeta?.reason,
       });
 
       if (itemRes) {
-        actions.push(itemRes);
-        if (pos && pos.costBasis > 0) {
-          const pnlPct = ((curP - pos.costBasis) / pos.costBasis) * 100;
-          if (pnlPct <= -8.0) {
-            riskAlerts.push({
-              level: "CRITICAL",
-              title: `[${sym}] 触发止损戒备`,
-              description: `当前浮亏 ${pnlPct.toFixed(1)}%，已下破 -8.0% 防线`,
-              relatedSymbol: sym,
-            });
-          }
+        return itemRes;
+      }
+
+      // Fallback rule-based recommendation
+      const isHolding = pos && pos.shares > 0;
+      const pnlPct = pos && pos.costBasis > 0 ? ((curP - pos.costBasis) / pos.costBasis) * 100 : 0;
+      let actionType: "BUY" | "TRIM" | "HOLD" = "HOLD";
+      let shares = 0;
+      let rationale = `[${sym}] 现价 $${curP.toFixed(2)}，多维指标处于中性区间，维持观望`;
+
+      if (catMeta?.category === "OVERSOLD_BUY" || catMeta?.category === "CAPITAL_INFLOW_BUY" || catMeta?.category === "FUNDAMENTAL_BUY" || catMeta?.category === "NEWS_CATALYST_BUY") {
+        actionType = "BUY";
+        shares = curP > 0 ? Math.max(1, Math.floor(Math.min(context.totalBudget * 0.35, 1000) / curP)) : 0;
+        rationale = `[${sym}] 触发 ${catMeta.label} 信号 (${catMeta.reason})，建议在现价 $${curP.toFixed(2)} 建仓 ${shares} 股。`;
+      } else if (isHolding && pnlPct >= 18.0) {
+        actionType = "TRIM";
+        shares = Math.max(1, Math.floor(pos.shares * 0.35));
+        rationale = `[${sym}] 累计浮盈 +${pnlPct.toFixed(1)}%，建议减仓 ${shares} 股锁定收益`;
+      } else if (isHolding && pnlPct <= -8.0) {
+        actionType = "TRIM";
+        shares = Math.max(1, Math.floor(pos.shares * 0.5));
+        rationale = `[${sym}] 触发 -8.0% 止损纪律，建议减仓 ${shares} 股规避下行风险`;
+      } else if (isHolding) {
+        actionType = "HOLD";
+        shares = pos.shares;
+        rationale = `[${sym}] 持仓运行健康，建议维持现有底仓`;
+      }
+
+      const urgency: "HIGH" | "MEDIUM" | "LOW" = actionType === "TRIM" || actionType === "BUY" ? "HIGH" : "LOW";
+
+      const fallbackItem: ActionItem = {
+        action: actionType,
+        symbol: sym,
+        companyName: pos?.companyName || sym,
+        suggestedShares: shares,
+        estimatedPrice: Number(curP.toFixed(2)),
+        estimatedAmount: Number((shares * curP).toFixed(2)),
+        rationale,
+        urgency,
+        targetPrice: Number((curP * 1.15).toFixed(2)),
+        stopLossPrice: Number((curP * 0.92).toFixed(2)),
+        riskRewardRatio: 2.2,
+        strategyCategory: catMeta?.category,
+        strategyCategoryLabel: catMeta?.label,
+        strategyCategoryReason: catMeta?.reason,
+        isOversoldOpportunity: catMeta?.category === "OVERSOLD_BUY",
+        oversoldReason: catMeta?.reason,
+      };
+      return fallbackItem;
+    });
+
+    const actions: ActionItem[] = await Promise.all(inferencePromises);
+    const riskAlerts: RiskAlert[] = [];
+
+    context.candidateSymbols.forEach((sym) => {
+      const pos = context.positions.find((p) => p.symbol.toUpperCase() === sym.toUpperCase());
+      const curP = context.quotesMap.get(sym.toUpperCase()) || pos?.marketPrice || pos?.costBasis || 0;
+      if (pos && pos.costBasis > 0 && curP > 0) {
+        const pnlPct = ((curP - pos.costBasis) / pos.costBasis) * 100;
+        if (pnlPct <= -8.0) {
+          riskAlerts.push({
+            level: "CRITICAL",
+            title: `[${sym}] 触发止损戒备`,
+            description: `当前浮亏 ${pnlPct.toFixed(1)}%，已下破 -8.0% 防线`,
+            relatedSymbol: sym,
+          });
         }
       }
-    }
+    });
 
     return {
       actions,

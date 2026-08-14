@@ -130,14 +130,15 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
             )}
           </div>
 
-          {/* Visual Deduction Inspector Button */}
+          {/* Visual Deduction Context Inspector Button */}
           {hasDeductionData && (
             <button
               onClick={onOpenDeductionModal}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 hover:bg-indigo-500/30 text-xs font-semibold transition-all"
+              title="查看 Ollama 融合推演全量 Prompt Payload 与 JSON 输出"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 hover:bg-indigo-500/30 text-xs font-semibold transition-all hover:scale-105"
             >
-              <Eye className="w-3.5 h-3.5" />
-              <span>推演 Payload 检视</span>
+              <Eye className="w-3.5 h-3.5 text-cyan-400" />
+              <span>推演 Context 检视器</span>
             </button>
           )}
 

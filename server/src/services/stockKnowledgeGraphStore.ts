@@ -281,6 +281,76 @@ export class StockKnowledgeGraphStoreService {
     await this.upsertKnowledgeGraph(portfolioId, item);
     return item;
   }
+
+  /**
+   * 后台异步并发为入选 5 大分类列表的每一只股票创建或更新操盘知识图谱
+   */
+  public async asyncBatchSyncGraphs(
+    portfolioId: string,
+    candidateItems: Array<{
+      symbol: string;
+      companyName?: string;
+      latestNews?: string[];
+      strategyCategoryLabel?: string;
+      strategyCategoryReason?: string;
+      capitalFlow?: { trend: string; description: string };
+      actionAdvice?: "BUY" | "SELL" | "HOLD" | "TRIM";
+    }>
+  ): Promise<void> {
+    // 异步执行，不阻断主流程
+    Promise.resolve().then(async () => {
+      try {
+        for (const item of candidateItems) {
+          const symUpper = item.symbol.toUpperCase();
+          let kg = await this.getKnowledgeGraph(portfolioId, symUpper);
+          if (!kg) {
+            kg = this.buildDefaultKnowledgeGraph(symUpper);
+          }
+
+          // 注入最新催化剂新闻
+          if (item.latestNews && item.latestNews.length > 0) {
+            const cleanNews = item.latestNews.slice(0, 5);
+            kg.newsCatalysts = Array.from(new Set([...(kg.newsCatalysts || []), ...cleanNews]));
+          }
+
+          if (item.strategyCategoryLabel) {
+            kg.guidanceText = `${item.strategyCategoryLabel}: ${item.strategyCategoryReason || ""}`;
+          }
+
+          if (item.actionAdvice) {
+            kg.actionAdvice = item.actionAdvice;
+          }
+
+          // 注入大资金流向关联节点
+          if (item.capitalFlow && item.capitalFlow.trend === "INFLOW") {
+            const flowNodeId = `${symUpper}_SMART_MONEY`;
+            if (!kg.nodes.some((n) => n.id === flowNodeId)) {
+              kg.nodes.push({
+                id: flowNodeId,
+                name: "机构主力大资金异动",
+                type: "CONCEPT",
+                description: item.capitalFlow.description || "OpenD 官方监测机构持续净流入",
+                recencyWeight: 1.0,
+                createdAt: new Date().toISOString(),
+              });
+              kg.edges.push({
+                source: flowNodeId,
+                target: symUpper,
+                relation: "主力资金净流入支撑估值",
+                impact: "POSITIVE",
+                recencyWeight: 1.0,
+                createdAt: new Date().toISOString(),
+              });
+            }
+          }
+
+          await this.upsertKnowledgeGraph(portfolioId, kg);
+        }
+      } catch (err: any) {
+        console.warn("[StockKnowledgeGraphStoreService] 后台异步同步图谱异常:", err.message || err);
+      }
+    });
+  }
 }
 
 export const stockKnowledgeGraphStoreService = new StockKnowledgeGraphStoreService();

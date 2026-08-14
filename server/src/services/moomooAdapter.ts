@@ -3,7 +3,7 @@ import crypto from "crypto";
 import path from "path";
 import fs from "fs";
 import { exec } from "child_process";
-import { StockPositionItem } from "../types/stockTypes";
+import { StockPositionItem, OpenDSnapshotItem } from "../types/stockTypes";
 import { openDaemonManager } from "./openDaemonManager";
 import { prisma } from "../db/prisma";
 
@@ -50,6 +50,29 @@ function parseOpenDPackets(buf: Buffer): { packets: any[]; remaining: Buffer } {
     offset += 44 + bodyLen;
   }
   return { packets, remaining: buf.slice(offset) };
+}
+
+function extractJsonFromBridgeOutput(stdout: string): any {
+  if (!stdout) return null;
+  const startTag = "__JSON_START__";
+  const endTag = "__JSON_END__";
+  const startIdx = stdout.indexOf(startTag);
+  const endIdx = stdout.indexOf(endTag, startIdx + startTag.length);
+  if (startIdx !== -1 && endIdx !== -1) {
+    const jsonStr = stdout.substring(startIdx + startTag.length, endIdx).trim();
+    try {
+      return JSON.parse(jsonStr);
+    } catch (e) {}
+  }
+  for (const line of stdout.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+      try {
+        return JSON.parse(trimmed);
+      } catch (e) {}
+    }
+  }
+  return null;
 }
 
 export class MooMooAdapter {
@@ -109,26 +132,19 @@ export class MooMooAdapter {
     return new Promise((resolve) => {
       exec(`python "${bridgeScript}"`, { encoding: "utf-8" }, (_err: any, stdout: string) => {
         try {
-          if (stdout) {
-            const lines = stdout.split(/\r?\n/);
-            for (const line of lines) {
-              if (line.includes('"success":') && line.includes('"positions":')) {
-                const data = JSON.parse(line.trim());
-                if (data.success && Array.isArray(data.positions)) {
-                  this.isTradeUnlocked = true;
-                  return resolve({
-                    cashBalance: data.detectedCash !== undefined ? data.detectedCash : 0.0,
-                    positions: data.positions.map((p: any) => ({
-                      symbol: p.symbol,
-                      companyName: p.companyName || p.symbol,
-                      shares: p.shares,
-                      costBasis: p.costBasis,
-                      marketPrice: p.marketPrice || p.costBasis,
-                    })),
-                  });
-                }
-              }
-            }
+          const data = extractJsonFromBridgeOutput(stdout);
+          if (data && data.success && Array.isArray(data.positions)) {
+            this.isTradeUnlocked = true;
+            return resolve({
+              cashBalance: data.detectedCash !== undefined ? data.detectedCash : 0.0,
+              positions: data.positions.map((p: any) => ({
+                symbol: p.symbol,
+                companyName: p.companyName || p.symbol,
+                shares: p.shares,
+                costBasis: p.costBasis,
+                marketPrice: p.marketPrice || p.costBasis,
+              })),
+            });
           }
         } catch (e) {}
         resolve(null);
@@ -272,10 +288,96 @@ export class MooMooAdapter {
     }));
   }
 
+  public async fetchMarketSnapshotsFromOpenD(
+    symbols: string[]
+  ): Promise<OpenDSnapshotItem[]> {
+    if (!symbols || symbols.length === 0) return [];
+    const isAlive = await openDaemonManager.checkOpenDAlive();
+    if (!isAlive) return [];
+
+    const bridgeScript = getMoomooBridgeScriptPath();
+    const uniqueSyms = Array.from(new Set(symbols.map((s) => s.trim().toUpperCase()))).filter(Boolean);
+
+    // 分批拉取快照，每批 35 只标的，避免 Windows 命令行过长截断
+    const batchSize = 35;
+    const allSnapshots: OpenDSnapshotItem[] = [];
+
+    for (let i = 0; i < uniqueSyms.length; i += batchSize) {
+      const batch = uniqueSyms.slice(i, i + batchSize).join(",");
+      const batchResult = await new Promise<OpenDSnapshotItem[]>((resolve) => {
+        exec(
+          `python "${bridgeScript}" --action=snapshots --symbols="${batch}"`,
+          { encoding: "utf-8", timeout: 20000, maxBuffer: 10 * 1024 * 1024 },
+          (_err: any, stdout: string) => {
+            try {
+              const data = extractJsonFromBridgeOutput(stdout);
+              if (data && data.success && Array.isArray(data.snapshots)) {
+                return resolve(data.snapshots);
+              }
+            } catch (e) {}
+            resolve([]);
+          }
+        );
+      });
+      allSnapshots.push(...batchResult);
+    }
+
+    return allSnapshots;
+  }
+
+  public async fetchCapitalFlowsFromOpenD(
+    symbols: string[]
+  ): Promise<Record<string, { inFlow: number; mainInFlow: number; trend: "INFLOW" | "OUTFLOW" | "NEUTRAL" }>> {
+    if (!symbols || symbols.length === 0) return {};
+    const isAlive = await openDaemonManager.checkOpenDAlive();
+    if (!isAlive) return {};
+
+    const bridgeScript = getMoomooBridgeScriptPath();
+    const cleanSyms = Array.from(new Set(symbols.map((s) => s.trim().toUpperCase()))).join(",");
+
+    return new Promise((resolve) => {
+      exec(
+        `python "${bridgeScript}" --action=capital_flow --symbols="${cleanSyms}"`,
+        { encoding: "utf-8", timeout: 20000, maxBuffer: 10 * 1024 * 1024 },
+        (_err: any, stdout: string) => {
+          try {
+            const data = extractJsonFromBridgeOutput(stdout);
+            if (data && data.success && data.flows) {
+              return resolve(data.flows);
+            }
+          } catch (e) {}
+          resolve({});
+        }
+      );
+    });
+  }
+
   public async fetchWatchlistFromOpenD(): Promise<Array<{ symbol: string; companyName: string }>> {
     const isAlive = await openDaemonManager.checkOpenDAlive();
     if (!isAlive) {
       return [];
+    }
+
+    // 优先通过 Python 桥接脚拉取
+    const bridgeScript = getMoomooBridgeScriptPath();
+    const pyWatchlist: Array<{ symbol: string; companyName: string }> | null = await new Promise((resolve) => {
+      exec(
+        `python "${bridgeScript}" --action=watchlist`,
+        { encoding: "utf-8", timeout: 8000 },
+        (_err: any, stdout: string) => {
+          try {
+            const data = extractJsonFromBridgeOutput(stdout);
+            if (data && data.success && Array.isArray(data.watchlist) && data.watchlist.length > 0) {
+              return resolve(data.watchlist);
+            }
+          } catch (e) {}
+          resolve(null);
+        }
+      );
+    });
+
+    if (pyWatchlist && pyWatchlist.length > 0) {
+      return pyWatchlist;
     }
 
     return new Promise((resolve) => {
@@ -310,7 +412,6 @@ export class MooMooAdapter {
                 symbol: String(item.basic?.security?.code || "").toUpperCase(),
                 companyName: String(item.basic?.name || item.basic?.security?.code || ""),
               }))
-              .filter((item: any) => item.symbol);
             resolve(watchlist);
           }
         }
@@ -320,6 +421,28 @@ export class MooMooAdapter {
         clearTimeout(timeout);
         resolve([]);
       });
+    });
+  }
+
+  public async fetchMarketUniverseFromOpenD(): Promise<Array<{ symbol: string; companyName: string }>> {
+    const isAlive = await openDaemonManager.checkOpenDAlive();
+    if (!isAlive) return [];
+
+    const bridgeScript = getMoomooBridgeScriptPath();
+    return new Promise((resolve) => {
+      exec(
+        `python "${bridgeScript}" --action=market_universe`,
+        { encoding: "utf-8", timeout: 15000, maxBuffer: 20 * 1024 * 1024 },
+        (_err: any, stdout: string) => {
+          try {
+            const data = extractJsonFromBridgeOutput(stdout);
+            if (data && data.success && Array.isArray(data.universe) && data.universe.length > 0) {
+              return resolve(data.universe);
+            }
+          } catch (e) {}
+          resolve([]);
+        }
+      );
     });
   }
 }

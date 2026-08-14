@@ -183,6 +183,7 @@ stockRouter.get("/strategy/stage", (_req: Request, res: Response) => {
     data: {
       stage: dailyStrategyDirector.currentActiveStage,
       liveDeductionPipeline: dailyStrategyDirector.liveDeductionPipeline,
+      liveStageData: dailyStrategyDirector.liveStageData,
     },
   });
 });
