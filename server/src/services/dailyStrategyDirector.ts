@@ -320,7 +320,9 @@ export class DailyStrategyDirector {
       knowledgeGraphList.push(kgItem);
 
       const fundamentals = await stockKnowledgeGraphStoreService.getFundamentals(sym);
-      const isClearedPos = !pos || pos.shares <= 0;
+      const isHolding = !!pos && pos.shares > 0;
+      const isClearedPos = !!pos && pos.shares === 0;
+      const isWatchlist = !pos && watchlistSymbols.includes(sym);
       const prevAction = prevActionsMap.get(sym);
       const currentPrice = quotesMap.get(sym) || cand.snapshot?.lastPrice || pos?.marketPrice || 0;
 
@@ -328,11 +330,15 @@ export class DailyStrategyDirector {
         ? `针对上次建议 (${prevAction.action}) 对照：当前现价 $${currentPrice.toFixed(2)}。`
         : isClearedPos
         ? `[${sym}] 既往已平仓离场，现价 $${currentPrice.toFixed(2)}。`
-        : `[${sym}] 首次纳入候选推演，暂无前期历史基准。`;
+        : isHolding
+        ? `[${sym}] 当前实盘持有中，现价 $${currentPrice.toFixed(2)}。`
+        : `[${sym}] 自选关注标的，等待大模型推演。`;
 
-      const candidateCategory: StockDeductionRetroItem["candidateCategory"] = holdingSymbols.includes(sym)
+      const candidateCategory: StockDeductionRetroItem["candidateCategory"] = isHolding
         ? "EXISTING_HOLDING"
-        : watchlistSymbols.includes(sym)
+        : isClearedPos
+        ? "EXISTING_HOLDING"
+        : isWatchlist
         ? "WATCHLIST"
         : "MACRO_CANDIDATE";
 
@@ -352,14 +358,14 @@ export class DailyStrategyDirector {
         openDSnapshot: cand.snapshot,
         position: pos
           ? { ...pos, isCleared: isClearedPos }
-          : { symbol: sym, companyName, shares: 0, costBasis: currentPrice, marketPrice: currentPrice, isCleared: true },
+          : undefined,
         pastRetro: {
           lastStrategyDate: prevStrategy?.strategyDate,
           lastAction: prevAction?.action || (isClearedPos ? "SELL" : "HOLD"),
           lastTargetPrice: prevAction?.targetPrice,
           lastStopLossPrice: prevAction?.stopLossPrice,
           actualPriceAction: pastRetroText,
-          pnlImpact: pos ? (currentPrice - pos.costBasis) * pos.shares : 0,
+          pnlImpact: pos && pos.shares > 0 ? (currentPrice - pos.costBasis) * pos.shares : 0,
         },
       });
     }

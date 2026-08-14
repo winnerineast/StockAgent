@@ -125,6 +125,42 @@ export default function App() {
       const json = await res.json();
       if (json.success && json.data) {
         setWatchlist(json.data);
+        if (Array.isArray(json.data) && json.data.length > 0) {
+          setPerStockItems((prev) => {
+            if (!prev) prev = [];
+            const existingSymbols = new Set(prev.map((item: any) => item.symbol.toUpperCase()));
+            const newWatchItems = json.data
+              .filter((w: any) => !existingSymbols.has(w.symbol.toUpperCase()))
+              .map((w: any) => ({
+                symbol: w.symbol,
+                companyName: w.companyName || w.symbol,
+                isCleared: false,
+                candidateCategory: "WATCHLIST",
+                strategyCategory: "WATCH_AND_WAIT",
+                strategyCategoryLabel: "👀 可以观望",
+                strategyCategoryReason: "OpenD 官方实时自选股关注标的",
+                knowledgeGraph: {
+                  symbol: w.symbol,
+                  companyName: w.companyName || w.symbol,
+                  positionCategory: "WATCHLIST",
+                  industrySector: "自选股标的池",
+                  nodes: [],
+                  edges: [],
+                  newsCatalysts: [],
+                  actionAdvice: "HOLD",
+                  guidanceText: "知识图谱载入中...",
+                },
+                latestNews: [],
+                position: undefined,
+                pastRetro: {
+                  lastStrategyDate: undefined,
+                  lastAction: undefined,
+                  actualPriceAction: "MooMoo 自选股标的，等待推演...",
+                },
+              }));
+            return [...prev, ...newWatchItems];
+          });
+        }
       }
     } catch (e) {}
   };

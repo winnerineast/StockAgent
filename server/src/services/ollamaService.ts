@@ -9,6 +9,8 @@ import {
   StockFundamentals,
   StockStrategyCategory,
 } from "../types/stockTypes";
+import { graphQuantitativeEngine } from "./graphQuantitativeEngine";
+import { quantRiskManager } from "./quantRiskManager";
 
 export interface HardwareInfo {
   totalRamGb: number;
@@ -289,14 +291,17 @@ ${searxngNewsText || "盘前资讯暂未检索到显著异常，维持平稳动�
       : "基本面数据暂未录入";
 
     const kgText = kg
-      ? `图谱节点: ${kg.nodes.map((n) => `[${n.type}]${n.name}`).join(", ")}; 图谱记忆: ${kg.compressedSummary || "无"}`
-      : "无图谱扩展节点";
+      ? graphQuantitativeEngine.formatTripletsForPrompt(kg)
+      : "【产业链知识图谱】: 暂未检索到扩展拓扑节点";
+
+    const spilloverAlpha = kg ? (kg.spilloverAlphaScore ?? graphQuantitativeEngine.calculateSpilloverAlpha(kg)) : 0;
+    const networkRisk = kg ? (kg.networkRiskScore ?? graphQuantitativeEngine.calculateNetworkRisk(kg)) : 30;
 
     const lessonsText = stockData.lessonsLearned.length > 0
       ? stockData.lessonsLearned.map((l, i) => `${i + 1}. ${l}`).join("\n")
       : "无历史风控教训";
 
-    const prompt = `分析美股标的 [${s}] (${cName}) 的全要素数据，结合策略分类归属与今日宏观大盘约束，给出今日定量操作建议与止盈止损价格。
+    const prompt = `分析美股标的 [${s}] (${cName}) 的全要素数据，结合策略分类归属、产业链上下游拓扑与今日宏观大盘约束，评估操作方向与逻辑论据。
 
 【策略分类归属】:
 ${categoryInfo}
@@ -317,7 +322,6 @@ ${newsText}
 【主力/机构大资金走向】:
 ${flowText}
 
-【操盘知识图谱】:
 ${kgText}
 
 【历史复盘风控教训】:
@@ -329,14 +333,8 @@ ${lessonsText}
   "action": "BUY" | "TRIM" | "HOLD" | "SELL",
   "symbol": "${s}",
   "companyName": "${cName}",
-  "suggestedShares": 10,
-  "estimatedPrice": ${curP.toFixed(2)},
-  "estimatedAmount": ${curP.toFixed(2)},
-  "rationale": "操作理由说明",
-  "urgency": "HIGH" | "MEDIUM" | "LOW",
-  "targetPrice": 0.0,
-  "stopLossPrice": 0.0,
-  "riskRewardRatio": 2.0
+  "rationale": "详细操作逻辑说明 (结合产业链因果传导与量化动量归因)",
+  "urgency": "HIGH" | "MEDIUM" | "LOW"
 }`;
 
     try {
@@ -364,22 +362,30 @@ ${lessonsText}
         }
 
         if (jsonParsed && jsonParsed.action && jsonParsed.symbol) {
-          return {
+          const rawAction: ActionItem = {
             action: jsonParsed.action,
             symbol: s,
             companyName: cName,
-            suggestedShares: Number(jsonParsed.suggestedShares || 0),
+            suggestedShares: Number(jsonParsed.suggestedShares || 10),
             estimatedPrice: curP,
-            estimatedAmount: Number(((jsonParsed.suggestedShares || 0) * curP).toFixed(2)),
-            rationale: jsonParsed.rationale || `基于 [${s}] 盘面现价 $${curP} 与策略归属 (${categoryInfo}) 推演`,
+            estimatedAmount: Number((10 * curP).toFixed(2)),
+            rationale: jsonParsed.rationale || `基于 [${s}] 盘面现价 $${curP}、产业链拓扑与策略归属 (${categoryInfo}) 推演`,
             urgency: jsonParsed.urgency || "MEDIUM",
-            targetPrice: jsonParsed.targetPrice ? Number(jsonParsed.targetPrice) : Number((curP * 1.12).toFixed(2)),
-            stopLossPrice: jsonParsed.stopLossPrice ? Number(jsonParsed.stopLossPrice) : Number((curP * 0.92).toFixed(2)),
-            riskRewardRatio: jsonParsed.riskRewardRatio ? Number(jsonParsed.riskRewardRatio) : 2.0,
+            targetPrice: 0,
+            stopLossPrice: 0,
+            riskRewardRatio: 2.0,
             strategyCategory: stockData.strategyCategory,
             strategyCategoryLabel: stockData.strategyCategoryLabel,
             strategyCategoryReason: stockData.strategyCategoryReason,
           };
+
+          // 通过数学风控与 ATR 波幅严格对齐解算目标价、止损价与持仓股数
+          return quantRiskManager.alignActionWithQuantRisk(
+            rawAction,
+            curP,
+            spilloverAlpha,
+            networkRisk
+          );
         }
       }
     } catch (e) {}

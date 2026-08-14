@@ -171,6 +171,8 @@ def run_capital_flow(symbols_str: str):
                     'mainInFlow': main_in_flow,
                     'trend': 'INFLOW' if in_flow > 0 else 'OUTFLOW' if in_flow < 0 else 'NEUTRAL'
                 }
+        except Exception:
+            pass
     ctx.close()
     output_json({
         'success': True,

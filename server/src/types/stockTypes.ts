@@ -121,6 +121,11 @@ export interface KnowledgeGraphEntityNode {
   type: "ROOT_STOCK" | "SUPPLIER" | "CLIENT" | "COMPETITOR" | "MACRO" | "CONCEPT";
   marketSymbol?: string;
   description?: string;
+  sector?: string;
+  beta?: number;
+  marketCap?: string;
+  recentSignalScore?: number; // -1.0 to 1.0 (quant signal score)
+  financialSummary?: string;
   recencyWeight?: number; // 0.0 - 1.0 time decay factor
   createdAt?: string;
 }
@@ -129,9 +134,26 @@ export interface KnowledgeGraphRelationEdge {
   source: string;
   target: string;
   relation: string;
+  relationType?: "UPSTREAM_SUPPLIER" | "DOWNSTREAM_CLIENT" | "COMPETITOR" | "MACRO_DRIVER" | "CONCEPT_THEME";
+  exposurePct?: number; // 0.0 - 1.0 (revenue/cost dependency percentage)
+  elasticity?: number; // Price/earnings transmission elasticity (Beta)
+  timeLagDays?: number; // Lead-lag transmission delay in trading days
   impact: "POSITIVE" | "NEGATIVE" | "NEUTRAL";
   recencyWeight?: number; // 0.0 - 1.0 time decay factor
   createdAt?: string;
+}
+
+export interface KnowledgeGraphTripletItem {
+  subject: string;
+  relation: string;
+  relationType?: string;
+  object: string;
+  impact: "POSITIVE" | "NEGATIVE" | "NEUTRAL";
+  exposurePct?: number;
+  timeLagDays?: number;
+  elasticity?: number;
+  signalScore?: number;
+  note?: string;
 }
 
 export interface StockKnowledgeGraphItem {
@@ -145,6 +167,9 @@ export interface StockKnowledgeGraphItem {
   actionAdvice: "BUY" | "SELL" | "HOLD" | "TRIM";
   guidanceText: string;
   compressedSummary?: string;
+  spilloverAlphaScore?: number; // -100 to 100 quant lead-lag alpha score
+  networkRiskScore?: number; // 0 to 100 supply chain & concentration risk score
+  structuredTriplets?: KnowledgeGraphTripletItem[];
 }
 
 export interface PastDeductionRetroPerStock {

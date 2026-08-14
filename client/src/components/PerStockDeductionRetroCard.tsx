@@ -43,6 +43,7 @@ interface KnowledgeNode {
   name: string;
   type: string;
   description?: string;
+  sector?: string;
   recencyWeight?: number;
 }
 
@@ -50,6 +51,10 @@ interface KnowledgeEdge {
   source: string;
   target: string;
   relation: string;
+  relationType?: string;
+  exposurePct?: number;
+  elasticity?: number;
+  timeLagDays?: number;
   impact: string;
   recencyWeight?: number;
 }
@@ -68,6 +73,8 @@ interface PerStockDeductionRetroCardProps {
       newsCatalysts: string[];
       guidanceText?: string;
       compressedSummary?: string;
+      spilloverAlphaScore?: number;
+      networkRiskScore?: number;
     };
     latestNews: string[];
     communitySentiment?: CommunitySentimentItem;
@@ -231,11 +238,25 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
               今日建议: {rec ? `${rec.action} (${rec.suggestedShares}股)` : "HOLD (0股)"}
             </span>
           </div>
+          {item.knowledgeGraph?.spilloverAlphaScore !== undefined && (
+            <span
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold border flex items-center gap-1 ${
+                item.knowledgeGraph.spilloverAlphaScore > 10
+                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                  : item.knowledgeGraph.spilloverAlphaScore < -10
+                  ? "bg-rose-500/10 text-rose-400 border-rose-500/30"
+                  : "bg-slate-900 text-cyan-300 border-slate-700"
+              }`}
+            >
+              <span>图谱动量:</span>
+              <span>{item.knowledgeGraph.spilloverAlphaScore >= 0 ? `+${item.knowledgeGraph.spilloverAlphaScore}` : item.knowledgeGraph.spilloverAlphaScore}</span>
+            </span>
+          )}
           <button
             onClick={() => onOpenKnowledgeGraph(item.symbol)}
-            className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-700 text-cyan-400 hover:bg-cyan-500/10 text-xs transition-all"
+            className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-700 text-cyan-400 hover:bg-cyan-500/10 text-xs transition-all font-semibold"
           >
-            操盘图谱
+            产业链图谱 ↗
           </button>
         </div>
       </div>
@@ -469,14 +490,26 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
 
           {/* SubTab 5: 知识图谱 */}
           {subTab === "kg" && (
-            <div className="space-y-2">
-              <div className="font-semibold text-slate-300 flex items-center justify-between">
-                <span>图谱节点 ({item.knowledgeGraph.nodes.length} 个) & 衰减记忆:</span>
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-slate-300">工业级产业链拓扑:</span>
+                  {item.knowledgeGraph.spilloverAlphaScore !== undefined && (
+                    <span className="text-[11px] px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/30">
+                      溢出动量: {item.knowledgeGraph.spilloverAlphaScore >= 0 ? `+${item.knowledgeGraph.spilloverAlphaScore}` : item.knowledgeGraph.spilloverAlphaScore}
+                    </span>
+                  )}
+                  {item.knowledgeGraph.networkRiskScore !== undefined && (
+                    <span className="text-[11px] px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/30">
+                      网络风险: {item.knowledgeGraph.networkRiskScore}/100
+                    </span>
+                  )}
+                </div>
                 <button
                   onClick={() => onOpenKnowledgeGraph(item.symbol)}
-                  className="text-cyan-400 hover:underline"
+                  className="text-cyan-400 hover:underline text-xs font-semibold"
                 >
-                  查看图形视窗 ↗
+                  打开完整图谱视窗 ↗
                 </button>
               </div>
 
@@ -486,21 +519,32 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
                 </div>
               )}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                {item.knowledgeGraph.nodes.slice(0, 4).map((node, idx) => (
-                  <div key={idx} className="p-2 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-between">
-                    <div>
-                      <div className="font-bold text-cyan-300">[{node.type}] {node.name}</div>
-                      <div className="text-[11px] text-slate-400 mt-0.5">{node.description || "无描述"}</div>
-                    </div>
-                    {node.recencyWeight !== undefined && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-400">
-                        权重: {node.recencyWeight}
-                      </span>
-                    )}
+              {/* Top Edges summary */}
+              {item.knowledgeGraph.edges && item.knowledgeGraph.edges.length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="text-[11px] font-bold text-slate-400">核心产业链传导链路:</div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {item.knowledgeGraph.edges.slice(0, 4).map((e, idx) => (
+                      <div key={idx} className="p-2 rounded-lg bg-slate-950 border border-slate-800 text-xs">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="font-bold text-cyan-300">{e.source} → {e.target}</span>
+                          <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
+                            e.impact === "POSITIVE" ? "text-emerald-400" : "text-rose-400"
+                          }`}>
+                            {e.impact === "POSITIVE" ? "利多" : "利空"}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 mt-1 line-clamp-1">{e.relation}</p>
+                        {e.exposurePct !== undefined && (
+                          <div className="text-[10px] text-slate-400 mt-0.5">
+                            敞口: {Math.round(e.exposurePct * 100)}% {e.timeLagDays ? `· 滞后 ${e.timeLagDays}天` : ""}
+                          </div>
+                        )}
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </div>
+              )}
             </div>
           )}
 

@@ -5,6 +5,11 @@ import {
   KnowledgeGraphRelationEdge,
   StockFundamentals,
 } from "../types/stockTypes";
+import {
+  REAL_STOCK_ECOSYSTEM_REGISTRY,
+  buildDynamicEcosystemForSymbol,
+} from "./stockKnowledgeBaseData";
+import { graphQuantitativeEngine } from "./graphQuantitativeEngine";
 
 export class StockKnowledgeGraphStoreService {
   /**
@@ -64,7 +69,7 @@ export class StockKnowledgeGraphStoreService {
   }
 
   /**
-   * 从数据库获取特定股票代码 (Symbol) 的专属操盘知识图谱，并执行时效衰减计算
+   * 从数据库获取特定股票代码 (Symbol) 的专属操盘知识图谱，执行时效衰减并计算量化图因子
    */
   public async getKnowledgeGraph(portfolioId: string, symbol: string): Promise<StockKnowledgeGraphItem | null> {
     const symbolUpper = symbol.toUpperCase();
@@ -89,26 +94,40 @@ export class StockKnowledgeGraphStoreService {
     try { edges = JSON.parse(record.edgesJson || "[]"); } catch (e) {}
     try { newsCatalysts = JSON.parse(record.newsCatalystsJson || "[]"); } catch (e) {}
 
+    // 如果历史库中节点为空或属于旧版占位符，自动使用高保真知识库重新装载
+    if (nodes.length === 0 || nodes.some((n) => n.id.endsWith("_SUPPLIER") && !n.sector)) {
+      const freshDefault = this.buildDefaultKnowledgeGraph(symbolUpper);
+      nodes = freshDefault.nodes;
+      edges = freshDefault.edges;
+    }
+
     // 计算时效衰减 (Recency Weighting)
     const decayedNodes = this.applyRecencyDecayToNodes(nodes);
     const decayedEdges = this.applyRecencyDecayToEdges(edges);
 
-    return {
+    const kgItem: StockKnowledgeGraphItem = {
       symbol: symbolUpper,
       companyName: symbolUpper,
       positionCategory: "EXISTING",
-      industrySector: "股票知识图谱实体网络",
+      industrySector: record.guidanceText ? record.guidanceText.split(":")[0] : "产业链因果网络",
       nodes: decayedNodes,
       edges: decayedEdges,
       newsCatalysts,
       actionAdvice: "HOLD",
-      guidanceText: record.guidanceText || `已加载 ${symbolUpper} 专属操盘知识图谱`,
+      guidanceText: record.guidanceText || `已装载 ${symbolUpper} 工业级产业链与量化图谱`,
       compressedSummary: record.compressedSummary ?? undefined,
     };
+
+    // 注入量化图因子计算 (Spillover Alpha & Network Risk)
+    kgItem.spilloverAlphaScore = graphQuantitativeEngine.calculateSpilloverAlpha(kgItem);
+    kgItem.networkRiskScore = graphQuantitativeEngine.calculateNetworkRisk(kgItem);
+    kgItem.structuredTriplets = graphQuantitativeEngine.generateStructuredTriplets(kgItem);
+
+    return kgItem;
   }
 
   /**
-   * 时效衰减计算 (最新信息 1.0 > 30天 0.6 > 90天 0.2)
+   * 时效衰减计算 (最新信息 1.0 > 7天 0.85 > 30天 0.6 > 90天 0.2)
    */
   private applyRecencyDecayToNodes(nodes: KnowledgeGraphEntityNode[]): KnowledgeGraphEntityNode[] {
     const now = Date.now();
@@ -135,6 +154,7 @@ export class StockKnowledgeGraphStoreService {
       let recencyWeight = 1.0;
       if (daysDiff > 90) recencyWeight = 0.2;
       else if (daysDiff > 30) recencyWeight = 0.6;
+      else if (daysDiff > 7) recencyWeight = 0.85;
 
       return {
         ...e,
@@ -144,42 +164,37 @@ export class StockKnowledgeGraphStoreService {
   }
 
   /**
-   * 生成默认股票图谱节点（包含 Root, Supplier, Competitor, Macro 节点，带真实 timestamp）
+   * 采用真实产业知识库构建高保真知识图谱，并计算初始量化图因子
    */
-  public buildDefaultKnowledgeGraph(symbol: string): StockKnowledgeGraphItem {
+  public buildDefaultKnowledgeGraph(symbol: string, companyName?: string): StockKnowledgeGraphItem {
     const s = symbol.toUpperCase();
-    const nowIso = new Date().toISOString();
-    const nodes: KnowledgeGraphEntityNode[] = [
-      { id: s, name: `${s} 主主体`, type: "ROOT_STOCK", marketSymbol: s, description: "核心美股标的资产", recencyWeight: 1.0, createdAt: nowIso },
-      { id: `${s}_SUPPLIER`, name: `${s} 关键供应链`, type: "SUPPLIER", description: "主要上游芯片/软硬件及材料供应商", recencyWeight: 1.0, createdAt: nowIso },
-      { id: `${s}_COMPETITOR`, name: `${s} 行业竞品`, type: "COMPETITOR", description: "主要同业竞争品牌与替代品", recencyWeight: 1.0, createdAt: nowIso },
-      { id: "FED_POLICY", name: "美联储利率决议", type: "MACRO", description: "Macro 利率环境与流动性影响", recencyWeight: 1.0, createdAt: nowIso },
-      { id: "AI_CATALYST", name: "AI 资本开支与算力需求", type: "CONCEPT", description: "行业核心概念与估值驱动力", recencyWeight: 1.0, createdAt: nowIso },
-    ];
+    const ecosystem =
+      REAL_STOCK_ECOSYSTEM_REGISTRY[s] ||
+      buildDynamicEcosystemForSymbol(s, companyName);
 
-    const edges: KnowledgeGraphRelationEdge[] = [
-      { source: `${s}_SUPPLIER`, target: s, relation: "供应关键核心零部件", impact: "POSITIVE", recencyWeight: 1.0, createdAt: nowIso },
-      { source: `${s}_COMPETITOR`, target: s, relation: "产品同质化争夺市场份额", impact: "NEGATIVE", recencyWeight: 1.0, createdAt: nowIso },
-      { source: "FED_POLICY", target: s, relation: "降息预期提升估值中枢", impact: "POSITIVE", recencyWeight: 1.0, createdAt: nowIso },
-      { source: "AI_CATALYST", target: s, relation: "拉动业绩与 PE 乘数放大", impact: "POSITIVE", recencyWeight: 1.0, createdAt: nowIso },
-    ];
-
-    return {
+    const kgItem: StockKnowledgeGraphItem = {
       symbol: s,
-      companyName: s,
+      companyName: ecosystem.companyName,
       positionCategory: "EXISTING",
-      industrySector: "科技与半导体",
-      nodes,
-      edges,
+      industrySector: ecosystem.sector,
+      nodes: ecosystem.nodes,
+      edges: ecosystem.edges,
       newsCatalysts: [],
       actionAdvice: "HOLD",
-      guidanceText: `${s} 知识图谱已动态生成`,
+      guidanceText: `${ecosystem.sector} · ${ecosystem.rootDescription}`,
     };
+
+    // 运行图量化引擎计算因子
+    kgItem.spilloverAlphaScore = graphQuantitativeEngine.calculateSpilloverAlpha(kgItem);
+    kgItem.networkRiskScore = graphQuantitativeEngine.calculateNetworkRisk(kgItem);
+    kgItem.structuredTriplets = graphQuantitativeEngine.generateStructuredTriplets(kgItem);
+
+    return kgItem;
   }
 
   /**
    * 图谱记忆遗忘与压缩提纯机制 (Compress and Decay Memory)
-   * 当催化剂新闻多于 5 条或边缘数过多时，蒸馏旧消息为长期实体描述 `compressedSummary`
+   * 将旧事件蒸馏为长期实体记忆摘要
    */
   public async compressAndDecayGraphMemory(portfolioId: string, symbol: string): Promise<void> {
     const symbolUpper = symbol.toUpperCase();
@@ -190,7 +205,7 @@ export class StockKnowledgeGraphStoreService {
     if (freshCatalysts.length > 4) {
       const olderItems = freshCatalysts.slice(0, freshCatalysts.length - 3);
       const recentItems = freshCatalysts.slice(freshCatalysts.length - 3);
-      const distilledSummary = `[历史事件记忆提纯]: ${olderItems.join("; ").slice(0, 200)}`;
+      const distilledSummary = `[历史产业链事件提纯]: ${olderItems.join("; ").slice(0, 240)}`;
 
       await prisma.stockKnowledgeGraphStore.update({
         where: { portfolioId_symbol: { portfolioId, symbol: symbolUpper } },
@@ -204,7 +219,7 @@ export class StockKnowledgeGraphStoreService {
   }
 
   /**
-   * 保存或更新单只股票图谱，并合并自定义节点
+   * 保存或更新单只股票图谱，并完整保留用户手动添加的 CUSTOM 实体与边
    */
   public async upsertKnowledgeGraph(portfolioId: string, item: StockKnowledgeGraphItem): Promise<void> {
     const symbolUpper = item.symbol.toUpperCase();
@@ -257,7 +272,7 @@ export class StockKnowledgeGraphStoreService {
       },
     });
 
-    // 触发概率性/阈值记忆压缩
+    // 触发记忆压缩检查
     await this.compressAndDecayGraphMemory(portfolioId, symbolUpper);
   }
 
@@ -278,12 +293,17 @@ export class StockKnowledgeGraphStoreService {
       item.edges.push(newEdge);
     }
 
+    // 重新计算图因子
+    item.spilloverAlphaScore = graphQuantitativeEngine.calculateSpilloverAlpha(item);
+    item.networkRiskScore = graphQuantitativeEngine.calculateNetworkRisk(item);
+    item.structuredTriplets = graphQuantitativeEngine.generateStructuredTriplets(item);
+
     await this.upsertKnowledgeGraph(portfolioId, item);
     return item;
   }
 
   /**
-   * 后台异步并发为入选 5 大分类列表的每一只股票创建或更新操盘知识图谱
+   * 后台异步并发为入选候选池的每一只股票更新高保真图谱与大资金节点
    */
   public async asyncBatchSyncGraphs(
     portfolioId: string,
@@ -297,14 +317,13 @@ export class StockKnowledgeGraphStoreService {
       actionAdvice?: "BUY" | "SELL" | "HOLD" | "TRIM";
     }>
   ): Promise<void> {
-    // 异步执行，不阻断主流程
     Promise.resolve().then(async () => {
       try {
         for (const item of candidateItems) {
           const symUpper = item.symbol.toUpperCase();
           let kg = await this.getKnowledgeGraph(portfolioId, symUpper);
           if (!kg) {
-            kg = this.buildDefaultKnowledgeGraph(symUpper);
+            kg = this.buildDefaultKnowledgeGraph(symUpper, item.companyName);
           }
 
           // 注入最新催化剂新闻
@@ -329,6 +348,9 @@ export class StockKnowledgeGraphStoreService {
                 id: flowNodeId,
                 name: "机构主力大资金异动",
                 type: "CONCEPT",
+                sector: "资金流向",
+                beta: 1.0,
+                recentSignalScore: 0.85,
                 description: item.capitalFlow.description || "OpenD 官方监测机构持续净流入",
                 recencyWeight: 1.0,
                 createdAt: new Date().toISOString(),
@@ -336,13 +358,22 @@ export class StockKnowledgeGraphStoreService {
               kg.edges.push({
                 source: flowNodeId,
                 target: symUpper,
-                relation: "主力资金净流入支撑估值",
+                relation: "主力资金净流入支撑估值与流动性溢价",
+                relationType: "CONCEPT_THEME",
+                exposurePct: 0.4,
+                elasticity: 0.9,
+                timeLagDays: 1,
                 impact: "POSITIVE",
                 recencyWeight: 1.0,
                 createdAt: new Date().toISOString(),
               });
             }
           }
+
+          // 重新计算图因子
+          kg.spilloverAlphaScore = graphQuantitativeEngine.calculateSpilloverAlpha(kg);
+          kg.networkRiskScore = graphQuantitativeEngine.calculateNetworkRisk(kg);
+          kg.structuredTriplets = graphQuantitativeEngine.generateStructuredTriplets(kg);
 
           await this.upsertKnowledgeGraph(portfolioId, kg);
         }
