@@ -7,6 +7,8 @@ import { dailyStrategyDirector } from "../services/dailyStrategyDirector";
 import { stockKnowledgeGraphStoreService } from "../services/stockKnowledgeGraphStore";
 import { macroSnapshotStoreService } from "../services/macroSnapshotStore";
 import { marketCalendarService } from "../services/marketCalendarService";
+import { deductionVerificationService } from "../services/deductionVerificationService";
+import { memoryConsolidationService } from "../services/memoryConsolidationService";
 import { prisma } from "../db/prisma";
 
 export const stockRouter = Router();
@@ -316,3 +318,37 @@ stockRouter.get("/macro/sectors", async (_req: Request, res: Response) => {
   const sectorsData = await moomooAdapter.fetchMacroSectorsFromOpenD();
   return res.json({ success: true, data: sectorsData });
 });
+
+// 14. 获取单只股票随时间演进的完整历史推演时间轴 (Temporal Evolution Timeline)
+stockRouter.get("/deduction/history/:symbol", async (req: Request, res: Response) => {
+  const { symbol } = req.params;
+  const portfolioId = (req.query.portfolioId as string) || "default-portfolio";
+  const historyTimeline = await deductionVerificationService.getSymbolTemporalEvolution(portfolioId, symbol);
+  return res.json({ success: true, data: historyTimeline });
+});
+
+// 15. 获取单只股票沉淀的长周期认知记忆与蒸馏原则
+stockRouter.get("/memory/principles/:symbol", async (req: Request, res: Response) => {
+  const { symbol } = req.params;
+  const portfolioId = (req.query.portfolioId as string) || "default-portfolio";
+  const principles = await memoryConsolidationService.getActivePrinciples(portfolioId, symbol);
+  return res.json({ success: true, data: principles });
+});
+
+// 16. 手动触发单只股票历史记忆合并与衰减重组
+stockRouter.post("/memory/consolidate/:symbol", async (req: Request, res: Response) => {
+  const { symbol } = req.params;
+  const portfolioId = (req.query.portfolioId as string) || "default-portfolio";
+  const verifiedHistory = await deductionVerificationService.getStockVerifiedHistory(portfolioId, symbol);
+  const lessons = verifiedHistory.historyLogs.map((h) => ({
+    date: h.deductionDate,
+    action: h.action,
+    outcome: h.verificationOutcome === "PENDING" ? ("RANDOM_NOISE" as const) : h.verificationOutcome,
+    outcomeLabel: h.verificationOutcomeLabel,
+    lessonText: h.verificationLesson,
+    pnlImpactAmount: h.pnlImpactAmount,
+  }));
+  const updatedPrinciples = await memoryConsolidationService.consolidateAndDistill(portfolioId, symbol, lessons);
+  return res.json({ success: true, data: updatedPrinciples });
+});
+

@@ -161,28 +161,40 @@ model StockDeductionLog {
   symbol                String
   companyName           String?
 
-  // 1. 搜索、图谱与基本面上下文快照
+  // 1. 标准化操盘动作与因果核心论据
+  action                String    // "BUY" | "TRIM" | "HOLD" | "SELL" (兼容字段)
+  actionType            String    @default("HOLD_AND_WATCH") // "OPEN_POSITION" | "ADD_POSITION" | "TRIM_POSITION" | "CLOSE_POSITION" | "HOLD_AND_WATCH"
+  whySummary            String?   // 直击核心的为什么操盘论据
+  strategyCategory      String?
+  suggestedShares       Float     @default(0)
+  triggerPrice          Float     // 当时的现价
+  targetPrice           Float?
+  stopLossPrice         Float?
+  entryZoneMin          Float?    // 建议挂单建仓区间下界
+  entryZoneMax          Float?    // 建议挂单建仓区间上界
+  timeStopDays          Int?      @default(5) // 时间止损 T 日纪律
+  certaintyScore        Float?    @default(50.0) // 确定性得分 (0-100)
+  goalAttainmentProbability Float? @default(50.0) // T日目标达成测算概率 (%)
+  rationale             String
+
+  // 2. 5 大客观事实证据支柱结构化快照 (JSON)
+  evidenceNewsJson          String?   @default("[]") // 支柱 1: 权威搜索与新闻分级快照
+  evidenceFundamentalsJson  String?   // 支柱 2: 基本面与财务估值快照
+  evidenceLiveMarketJson    String?   // 支柱 3: 实盘持仓成本与盘口资金流快照
+  evidenceTimeFmJson        String?   // 支柱 4: Google TimeFM 时序动量预测快照
+  evidencePastLessonsJson   String?   @default("[]") // 支柱 5: 历史实盘核验反哺教训快照
+
+  // 兼容老字段
   searxngNewsJson       String    @default("[]")
   knowledgeGraphJson    String?
   fundamentalsJson      String?
-
-  // 2. Google TimeFM 次日时序预测
   timefmDirection       String?   // "UP" | "DOWN" | "SIDEWAYS"
   timefmPredictedPrice  Float?    // 预测次日现价
   timefmPredictedChange Float?    // 预测次日涨跌幅 %
   timefmConfidenceLow   Float?    // 10% 分位数下界
   timefmConfidenceHigh  Float?    // 90% 分位数上界
 
-  // 3. Ollama 决策与推理论据
-  action                String    // "BUY" | "TRIM" | "HOLD" | "SELL"
-  strategyCategory      String?
-  suggestedShares       Float     @default(0)
-  triggerPrice          Float     // 当时的现价
-  targetPrice           Float?
-  stopLossPrice         Float?
-  rationale             String
-
-  // 4. 实盘检验与三态归因 (次日启动时通过 OpenD 自动回填)
+  // 3. 实盘检验与三态归因 (次日启动时通过 OpenD 自动回填)
   isVerified            Boolean   @default(false)
   verifiedAt            DateTime?
   actualNextClosePrice  Float?    // 次日实盘实际收盘价
@@ -198,4 +210,26 @@ model StockDeductionLog {
   @@index([symbol, deductionDate])
   @@index([portfolioId, deductionDate])
 }
+
+model StockTradingMemoryStore {
+  id                 String   @id @default(uuid())
+  portfolioId        String   @default("default-portfolio")
+  symbol             String   // 标的代码或 "GLOBAL"
+  principleType      String   @default("INDIVIDUAL_STOCK") // "INDIVIDUAL_STOCK" | "SECTOR_RULE" | "GLOBAL_DISCIPLINE"
+  category           String   // "ENTRY_DISCIPLINE" | "STOP_LOSS_RULE" | "TAKE_PROFIT_RULE" | "EVENT_CATALYST"
+  title              String   // 简短规则标题
+  distilledRule      String   // 完整蒸馏高阶原则描述
+  sampleCount        Int      @default(1) // 归纳合并的历史样本数量
+  confidenceWeight   Float    @default(1.0) // 置信度与激活权重 (0.0 ~ 1.0, 随时间衰减/重复触发强化)
+  firstLearnedDate   String   // 首次提炼日期 YYYY-MM-DD
+  lastReinforcedDate String   // 最近强化/重组日期 YYYY-MM-DD
+  isArchived         Boolean  @default(false) // 是否因长期未触发或权重大幅衰减移入冷归档
+  evidenceLogsJson   String   @default("[]") // 支撑此原则的历史推演日志 ID 列表
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([portfolioId, symbol, category, title])
+  @@index([portfolioId, symbol, isArchived])
+}
+
 

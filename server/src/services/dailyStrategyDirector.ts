@@ -17,6 +17,7 @@ import {
   StockDeductionRetroItem,
   SingleStockIntel,
   ActionItem,
+  StockActionVerdict,
   StockStrategyCategory,
   OpenDSnapshotItem,
   DeductionPipelineData,
@@ -398,6 +399,60 @@ export class DailyStrategyDirector {
         ? "WATCHLIST"
         : "MACRO_CANDIDATE";
 
+      const credibleNewsItems: any[] = (intel.latestNews || []).map((n) => ({
+        title: n.length > 60 ? n.slice(0, 60) + "..." : n,
+        summary: n,
+        sourceName: "SearXNG 聚合资讯",
+        tier: 1,
+        tierLabel: "Tier-1 核心资讯",
+        sentiment: "NEUTRAL",
+        url: "",
+      }));
+
+      const evidence5Pillars: any = {
+        news: credibleNewsItems,
+        fundamentals: fundamentals ? {
+          peRatio: fundamentals.peRatio ?? cand.snapshot?.peRatio,
+          pbRatio: cand.snapshot?.pbRatio,
+          revenueGrowthPct: fundamentals.revenueGrowthPct,
+          netMarginPct: fundamentals.netMarginPct,
+          debtToEquity: fundamentals.debtToEquity,
+          nextEarningsDate: fundamentals.nextEarningsDate,
+          valuationScore: cand.snapshot?.peRatio ? Math.max(15, Math.min(95, Math.round(100 - cand.snapshot.peRatio * 1.5))) : 65,
+          valuationStatus: cand.snapshot?.peRatio && cand.snapshot.peRatio < 25 ? "合理偏低估" : "成长溢价",
+          summary: fundamentals.fundamentalSummary,
+        } : undefined,
+        liveMarket: {
+          curPrice: currentPrice,
+          costBasis: pos?.costBasis,
+          shares: pos?.shares,
+          pnlAmount: pos && pos.shares > 0 ? Number(((currentPrice - pos.costBasis) * pos.shares).toFixed(2)) : 0,
+          pnlPct: pos && pos.costBasis > 0 ? Number((((currentPrice - pos.costBasis) / pos.costBasis) * 100).toFixed(2)) : 0,
+          mainCapitalInflow: cand.snapshot?.mainCapitalInflow,
+          capitalInflow: cand.snapshot?.capitalInflow,
+          turnoverRate: cand.snapshot?.turnoverRate,
+          flowTrend: intel.capitalFlow?.trend || "NEUTRAL",
+          description: intel.capitalFlow?.description || "盘口资金动向平稳",
+        },
+        timefm: tfmForecast ? {
+          direction: tfmForecast.direction,
+          predictedPrice: tfmForecast.predictedPrice,
+          predictedChangePct: tfmForecast.predictedChangeRate,
+          confidenceLow: tfmForecast.confidenceLow,
+          confidenceHigh: tfmForecast.confidenceHigh,
+          targetAttainmentProbability: 68,
+          momentumRationale: tfmForecast.momentumRationale,
+        } : undefined,
+        pastLessons: verifiedData.historyLogs.map((h) => ({
+          date: h.deductionDate,
+          action: h.action,
+          outcome: h.verificationOutcome === "PENDING" ? "RANDOM_NOISE" : h.verificationOutcome,
+          outcomeLabel: h.verificationOutcomeLabel,
+          lessonText: h.verificationLesson,
+          pnlImpactAmount: h.pnlImpactAmount,
+        })),
+      };
+
       perStockDeductionRetroList.push({
         symbol: sym,
         companyName,
@@ -408,11 +463,13 @@ export class DailyStrategyDirector {
         strategyCategoryReason: cand.classification.strategyCategoryReason,
         knowledgeGraph: kgItem,
         latestNews: intel.latestNews,
+        credibleNews: credibleNewsItems,
         communitySentiment: intel.communitySentiment,
         capitalFlow: intel.capitalFlow,
         fundamentals: fundamentals ?? undefined,
         openDSnapshot: cand.snapshot,
         timefmForecast: tfmForecast,
+        evidence5Pillars,
         position: pos
           ? { ...pos, isCleared: isClearedPos }
           : undefined,
@@ -567,10 +624,22 @@ export class DailyStrategyDirector {
 
     screenerRes.actions = optimizedActions;
 
-    // 将推演建议动作绑回列表
+    // 将推演建议动作绑回列表并附上 5 大事实证据
     screenerRes.actions.forEach((act) => {
       const target = perStockDeductionRetroList.find((item) => item.symbol.toUpperCase() === act.symbol.toUpperCase());
       if (target) {
+        if (!act.actionType) {
+          const isHolding = target.position && target.position.shares > 0;
+          act.actionType = act.action === "BUY"
+            ? (isHolding ? "ADD_POSITION" : "OPEN_POSITION")
+            : act.action === "SELL" || act.action === "TRIM"
+            ? (act.action === "SELL" ? "CLOSE_POSITION" : "TRIM_POSITION")
+            : "HOLD_AND_WATCH";
+        }
+        if (!act.whySummary) {
+          act.whySummary = act.goalDrivenRationale || act.rationale?.slice(0, 100) || `围绕 [${act.symbol}] 5大事实证据建议执行 ${act.actionType}`;
+        }
+        act.evidence = target.evidence5Pillars;
         target.currentRecommendation = act;
       }
     });
@@ -584,33 +653,41 @@ export class DailyStrategyDirector {
         const pnlPct = pos && pos.costBasis > 0 ? ((curPrice - pos.costBasis) / pos.costBasis) * 100 : 0;
 
         let autoAction: "BUY" | "TRIM" | "HOLD" = "HOLD";
+        let autoActionType: StockActionVerdict = "HOLD_AND_WATCH";
         let shares = 0;
         let rationale = "";
 
         if (item.strategyCategory === "OVERSOLD_BUY" || item.strategyCategory === "FUNDAMENTAL_BUY" || item.strategyCategory === "NEWS_CATALYST_BUY" || item.strategyCategory === "CAPITAL_INFLOW_BUY") {
           autoAction = "BUY";
+          autoActionType = isHolding ? "ADD_POSITION" : "OPEN_POSITION";
           shares = Math.max(1, Math.floor(Math.min(budgetToUse * 0.35, 1000) / curPrice));
           rationale = `[${item.symbol}] 触发 ${item.strategyCategoryLabel || "建仓"} 信号 (${item.strategyCategoryReason || ""})，建议建仓 ${shares} 股。`;
         } else if (isHolding && pnlPct >= 18.0) {
           autoAction = "TRIM";
+          autoActionType = "TRIM_POSITION";
           shares = Math.max(1, Math.floor(pos.shares * 0.35));
           rationale = `[${item.symbol}] 浮盈 +${pnlPct.toFixed(1)}%，建议阶梯止盈锁定部分收益。`;
         } else if (isHolding && pnlPct <= -8.0) {
           autoAction = "TRIM";
+          autoActionType = "CLOSE_POSITION";
           shares = Math.max(1, Math.floor(pos.shares * 0.5));
           rationale = `[${item.symbol}] 触及 -8.0% 软止损防线，建议减仓规避下行风险。`;
         } else if (isHolding) {
           autoAction = "HOLD";
+          autoActionType = "HOLD_AND_WATCH";
           shares = pos.shares;
           rationale = `[${item.symbol}] 走势处于健康观察区间，建议保持现有底仓。`;
         } else {
           autoAction = "HOLD";
+          autoActionType = "HOLD_AND_WATCH";
           shares = 0;
           rationale = `[${item.symbol}] 当前未触发极值超跌建仓信号，建议持续跟踪。`;
         }
 
         const fallbackAct: ActionItem = {
           action: autoAction,
+          actionType: autoActionType,
+          whySummary: rationale,
           symbol: item.symbol,
           companyName: item.companyName || item.symbol,
           suggestedShares: shares,
@@ -620,14 +697,17 @@ export class DailyStrategyDirector {
           urgency: autoAction === "TRIM" || autoAction === "BUY" ? "HIGH" : "LOW",
           targetPrice: Number((curPrice * (1 + targetProfitGoalPct / 100)).toFixed(2)),
           stopLossPrice: Number((curPrice * (1 - maxDrawdownPct / 100)).toFixed(2)),
-          riskRewardRatio: 2.2,
+          riskRewardRatio: 2.0,
           strategyCategory: item.strategyCategory,
           strategyCategoryLabel: item.strategyCategoryLabel,
           strategyCategoryReason: item.strategyCategoryReason,
-          isOversoldOpportunity: item.strategyCategory === "OVERSOLD_BUY",
-          oversoldReason: item.strategyCategoryReason,
           targetTimeHorizonDays,
           targetProfitGoalPct,
+          entryZone: {
+            min: Number((curPrice * 0.992).toFixed(2)),
+            max: Number((curPrice * 1.006).toFixed(2)),
+          },
+          evidence: item.evidence5Pillars,
         };
 
         item.currentRecommendation = fallbackAct;

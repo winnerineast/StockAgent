@@ -2,6 +2,7 @@ import os from "os";
 import { execSync } from "child_process";
 import {
   ActionItem,
+  StockActionVerdict,
   RiskAlert,
   StockPositionItem,
   StockKnowledgeGraphItem,
@@ -405,12 +406,16 @@ ${kgText}
 ${verifiedMemories}
 
 输出要求:
-请以纯 JSON 格式输出以下结构 (不要包含 markdown 额外文本):
+请以严格的 JSON 格式输出以下结构：
 {
+  "actionType": "OPEN_POSITION" | "ADD_POSITION" | "TRIM_POSITION" | "CLOSE_POSITION" | "HOLD_AND_WATCH",
   "action": "BUY" | "TRIM" | "HOLD" | "SELL",
   "symbol": "${s}",
   "companyName": "${cName}",
-  "rationale": "基于当前 [${session.phaseLabel}] 时态与 【${session.activeRoleName}】 角色，消除迷茫的核心确定性逻辑 (论证为何能在限定 ${targetT} 日内达成 +${targetG}% 目标，明确挂单区间 entryZone 与时间止损纪律)",
+  "whySummary": "1~2句话直击核心：基于5大客观事实说明【为什么】做此操作",
+  "entryZoneMin": ${Number((curP * 0.992).toFixed(2))},
+  "entryZoneMax": ${Number((curP * 1.006).toFixed(2))},
+  "rationale": "基于当前 [${session.phaseLabel}] 时态与 【${session.activeRoleName}】 角色，消除迷茫的核心确定性逻辑 (论证为何能在限定 ${targetT} 日内达成 +${targetG}% 目标，明确挂单区间与时间止损纪律)",
   "urgency": "HIGH" | "MEDIUM" | "LOW"
 }`;
 
@@ -438,9 +443,19 @@ ${verifiedMemories}
           if (match) jsonParsed = JSON.parse(match[0]);
         }
 
-        if (jsonParsed && jsonParsed.action && jsonParsed.symbol) {
+        if (jsonParsed && (jsonParsed.action || jsonParsed.actionType) && jsonParsed.symbol) {
+          const inferActionType: StockActionVerdict = jsonParsed.actionType || (
+            jsonParsed.action === "BUY"
+              ? (pos && pos.shares > 0 ? "ADD_POSITION" : "OPEN_POSITION")
+              : jsonParsed.action === "SELL" || jsonParsed.action === "TRIM"
+              ? (jsonParsed.action === "SELL" ? "CLOSE_POSITION" : "TRIM_POSITION")
+              : "HOLD_AND_WATCH"
+          );
+
           const rawAction: ActionItem = {
-            action: jsonParsed.action,
+            action: jsonParsed.action || (inferActionType === "OPEN_POSITION" || inferActionType === "ADD_POSITION" ? "BUY" : inferActionType === "CLOSE_POSITION" || inferActionType === "TRIM_POSITION" ? "TRIM" : "HOLD"),
+            actionType: inferActionType,
+            whySummary: jsonParsed.whySummary || jsonParsed.rationale?.slice(0, 120) || `基于 [${s}] 5大客观事实与确定性量化求解建议 ${inferActionType}`,
             symbol: s,
             companyName: cName,
             suggestedShares: Number(jsonParsed.suggestedShares || 10),
@@ -456,6 +471,10 @@ ${verifiedMemories}
             strategyCategoryReason: stockData.strategyCategoryReason,
             targetTimeHorizonDays: targetT,
             targetProfitGoalPct: targetG,
+            entryZone: {
+              min: Number(jsonParsed.entryZoneMin || (curP * 0.992).toFixed(2)),
+              max: Number(jsonParsed.entryZoneMax || (curP * 1.006).toFixed(2)),
+            },
           };
 
           return quantRiskManager.alignActionWithQuantRisk(

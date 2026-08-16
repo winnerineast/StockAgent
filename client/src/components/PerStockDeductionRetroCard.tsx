@@ -250,20 +250,23 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
         </div>
 
         <div className="flex flex-wrap items-center gap-2 shrink-0">
-          <div
-            className={`px-3 py-1 rounded-xl text-xs font-bold flex items-center gap-1.5 ${
-              isBuy
-                ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40"
-                : isTrim
-                ? "bg-rose-500/20 text-rose-400 border border-rose-500/40"
-                : "bg-slate-800 text-slate-300 border border-slate-700"
-            }`}
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>
-              今日建议: {rec ? `${rec.action} (${rec.suggestedShares}股)` : "HOLD (0股)"}
-            </span>
-          </div>
+          {(() => {
+            const actType = (rec as any)?.actionType || (isBuy ? (pos && pos.shares > 0 ? "ADD_POSITION" : "OPEN_POSITION") : isTrim ? (rec?.action === "SELL" ? "CLOSE_POSITION" : "TRIM_POSITION") : "HOLD_AND_WATCH");
+            const labelMap: Record<string, { label: string; badge: string }> = {
+              OPEN_POSITION: { label: `🟢 建议建仓 (${rec?.suggestedShares || 0}股)`, badge: "bg-emerald-500/20 text-emerald-300 border-emerald-500/40" },
+              ADD_POSITION: { label: `🟢 建议加仓 (${rec?.suggestedShares || 0}股)`, badge: "bg-cyan-500/20 text-cyan-300 border-cyan-500/40" },
+              TRIM_POSITION: { label: `🟡 建议减仓 (${rec?.suggestedShares || 0}股)`, badge: "bg-amber-500/20 text-amber-300 border-amber-500/40" },
+              CLOSE_POSITION: { label: `🔴 建议清仓 (全部)`, badge: "bg-rose-500/20 text-rose-300 border-rose-500/40" },
+              HOLD_AND_WATCH: { label: "⚪ 保持观望", badge: "bg-slate-800 text-slate-300 border-slate-700" },
+            };
+            const meta = labelMap[actType] || labelMap.HOLD_AND_WATCH;
+            return (
+              <div className={`px-3 py-1 rounded-xl text-xs font-bold flex items-center gap-1.5 border shadow-sm ${meta.badge}`}>
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>{meta.label}</span>
+              </div>
+            );
+          })()}
 
           {item.timefmForecast && (
             <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 flex items-center gap-1">
@@ -279,17 +282,10 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
                   ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
                   : past.verificationOutcome === "LESSON"
                   ? "bg-rose-500/15 text-rose-300 border-rose-500/30"
-                  : "bg-amber-500/15 text-amber-300 border-amber-500/30"
+                  : "bg-slate-800 text-slate-400 border-slate-700"
               }`}
             >
-              <span>
-                {past.verificationOutcomeLabel ||
-                  (past.verificationOutcome === "EXPERIENCE"
-                    ? "🟢 成功经验"
-                    : past.verificationOutcome === "LESSON"
-                    ? "🔴 失败教训"
-                    : "🎲 随机噪音")}
-              </span>
+              <span>{past.verificationOutcomeLabel || (past.verificationOutcome === "EXPERIENCE" ? "🟢 经验" : "🔴 教训")}</span>
             </span>
           )}
 

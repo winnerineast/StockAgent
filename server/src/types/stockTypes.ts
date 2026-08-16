@@ -46,8 +46,120 @@ export interface EntryZone {
   max: number;
 }
 
+export type StockActionVerdict =
+  | "OPEN_POSITION"   // 1. 建仓 (无仓开仓)
+  | "ADD_POSITION"    // 2. 加仓 (浮盈/回踩支撑追加头寸)
+  | "TRIM_POSITION"   // 3. 减仓 (触及阻力/阶段锁利避险)
+  | "CLOSE_POSITION"  // 4. 清仓 (破位硬止损/逻辑破坏清仓)
+  | "HOLD_AND_WATCH"; // 5. 持有/观望 (中性观望)
+
+export interface NewsEvidenceItem {
+  title: string;
+  summary: string;
+  sourceName: string;
+  tier: 1 | 2 | 3;
+  tierLabel: string;
+  sentiment: "BULLISH" | "BEARISH" | "NEUTRAL";
+  url: string;
+  publishedTime?: string;
+}
+
+export interface FundamentalsEvidence {
+  peRatio?: number;
+  pbRatio?: number;
+  revenueGrowthPct?: number;
+  netMarginPct?: number;
+  debtToEquity?: number;
+  nextEarningsDate?: string;
+  valuationScore?: number;
+  valuationStatus?: string;
+  summary?: string;
+}
+
+export interface LiveMarketEvidence {
+  curPrice: number;
+  costBasis?: number;
+  shares?: number;
+  pnlAmount?: number;
+  pnlPct?: number;
+  mainCapitalInflow?: number;
+  capitalInflow?: number;
+  turnoverRate?: number;
+  flowTrend?: "INFLOW" | "OUTFLOW" | "NEUTRAL";
+  description?: string;
+}
+
+export interface TimeFmEvidence {
+  direction: "UP" | "DOWN" | "SIDEWAYS";
+  predictedPrice: number;
+  predictedChangePct: number;
+  confidenceLow: number;
+  confidenceHigh: number;
+  targetAttainmentProbability: number;
+  momentumRationale?: string;
+}
+
+export interface PastLessonEvidence {
+  id?: string;
+  date: string;
+  action: string;
+  outcome: "EXPERIENCE" | "LESSON" | "RANDOM_NOISE";
+  outcomeLabel: string;
+  lessonText: string;
+  pnlImpactAmount?: number;
+}
+
+export interface Evidence5Pillars {
+  news: NewsEvidenceItem[];
+  fundamentals?: FundamentalsEvidence;
+  liveMarket: LiveMarketEvidence;
+  timefm?: TimeFmEvidence;
+  pastLessons: PastLessonEvidence[];
+}
+
+export interface ConsolidatedPrincipleItem {
+  id: string;
+  portfolioId: string;
+  symbol: string;
+  principleType: "INDIVIDUAL_STOCK" | "SECTOR_RULE" | "GLOBAL_DISCIPLINE";
+  category: "ENTRY_DISCIPLINE" | "STOP_LOSS_RULE" | "TAKE_PROFIT_RULE" | "EVENT_CATALYST";
+  title: string;
+  distilledRule: string;
+  sampleCount: number;
+  confidenceWeight: number; // 0.0 ~ 1.0 (with time-decay)
+  firstLearnedDate: string;
+  lastReinforcedDate: string;
+  isArchived: boolean;
+  evidenceLogIds?: string[];
+}
+
+export interface TemporalEvolutionItem {
+  id: string;
+  deductionDate: string;
+  actionType: StockActionVerdict;
+  actionTypeLabel: string;
+  whySummary: string;
+  triggerPrice: number;
+  targetPrice?: number;
+  stopLossPrice?: number;
+  entryZone?: EntryZone;
+  timeStopDays?: number;
+  certaintyScore?: number;
+  goalAttainmentProbability?: number;
+  isVerified: boolean;
+  actualNextClosePrice?: number;
+  actualNextChangeRate?: number;
+  verificationOutcome?: "EXPERIENCE" | "LESSON" | "RANDOM_NOISE";
+  verificationOutcomeLabel?: string;
+  verificationLesson?: string;
+  pnlImpactAmount?: number;
+  evidence?: Evidence5Pillars;
+}
+
 export interface ActionItem {
   action: "BUY" | "SELL" | "HOLD" | "TRIM";
+  actionType?: StockActionVerdict;
+  whySummary?: string;
   symbol: string;
   companyName?: string;
   suggestedShares: number;
@@ -82,6 +194,7 @@ export interface ActionItem {
   maxRiskAmount?: number;              // 触及止损最大可承受损失 ($)
   expectedPnLAmount?: number;          // 目标达成预期净盈利 ($)
   goalDrivenRationale?: string;        // 消除迷茫度的核心因果逻辑
+  evidence?: Evidence5Pillars;
 }
 
 export interface RiskAlert {
@@ -243,6 +356,7 @@ export interface StockDeductionRetroItem {
   strategyCategoryReason?: string;
   knowledgeGraph: StockKnowledgeGraphItem;
   latestNews: string[];
+  credibleNews?: NewsEvidenceItem[];
   communitySentiment?: CommunitySentimentItem;
   capitalFlow?: CapitalFlowItem;
   fundamentals?: StockFundamentals;
@@ -251,6 +365,7 @@ export interface StockDeductionRetroItem {
   timefmForecast?: TimeFmForecastItem; // Google TimeFM 次日时序预测
   pastRetro: PastDeductionRetroPerStock; // 实盘三态闭环检验与经验库
   currentRecommendation?: ActionItem;
+  evidence5Pillars?: Evidence5Pillars;
 }
 
 export interface StrategyProgressStage {
