@@ -279,7 +279,7 @@ ${searxngNewsText || "暂无最新全球宏观突发新闻"}
       const resp = await fetch(`${this.baseUrl}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        signal: AbortSignal.timeout(20000),
+        signal: AbortSignal.timeout(60000),
         body: JSON.stringify({
           model: modelName,
           messages: [{ role: "user", content: prompt }],
@@ -423,7 +423,7 @@ ${verifiedMemories}
       const resp = await fetch(`${this.baseUrl}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(60000),
         body: JSON.stringify({
           model: modelName,
           messages: [{ role: "user", content: prompt }],
@@ -532,8 +532,8 @@ ${verifiedMemories}
     // Stage A: 宏观 Chunk 推理
     const macroOverview = await this.generateMacroSummaryWithOllama(selectedModel, context.searxngNewsText);
 
-    // Stage B: 候选股票 Map Chunk 并发分段推理 (注入目标驱动、TimeFM预测与实盘经验库)
-    const inferencePromises = context.candidateSymbols.map(async (sym) => {
+    // Stage B: 候选股票 Map Chunk 分批并发推理 (并发池限流 2，防止显存与队列超时)
+    const deduceOneSymbol = async (sym: string): Promise<ActionItem> => {
       const pos = context.positions.find((p) => p.symbol.toUpperCase() === sym.toUpperCase());
       const curP =
         context.quotesMap.get(sym.toUpperCase()) ||
@@ -621,21 +621,32 @@ ${verifiedMemories}
         estimatedAmount: Number((shares * curP).toFixed(2)),
         rationale,
         urgency,
-        targetPrice: Number((curP * (1 + targetG / 100)).toFixed(2)),
-        stopLossPrice: Number((curP * (1 - maxD / 100)).toFixed(2)),
-        riskRewardRatio: 2.2,
         strategyCategory: catMeta?.category,
         strategyCategoryLabel: catMeta?.label,
         strategyCategoryReason: catMeta?.reason,
-        isOversoldOpportunity: catMeta?.category === "OVERSOLD_BUY",
-        oversoldReason: catMeta?.reason,
-        targetTimeHorizonDays: targetT,
-        targetProfitGoalPct: targetG,
       };
-      return fallbackItem;
-    });
 
-    const actions: ActionItem[] = await Promise.all(inferencePromises);
+      return quantRiskManager.alignActionWithQuantRisk(
+        fallbackItem,
+        curP,
+        kg?.spilloverAlphaScore || 0,
+        kg?.networkRiskScore || 0,
+        context.totalBudget,
+        context.cashBalance,
+        targetG,
+        targetT,
+        maxD
+      );
+    };
+
+    const actions: ActionItem[] = [];
+    const poolConcurrency = 2;
+    for (let i = 0; i < context.candidateSymbols.length; i += poolConcurrency) {
+      const chunk = context.candidateSymbols.slice(i, i + poolConcurrency);
+      const chunkResults = await Promise.all(chunk.map((sym) => deduceOneSymbol(sym)));
+      actions.push(...chunkResults);
+    }
+
     const riskAlerts: RiskAlert[] = [];
 
     context.candidateSymbols.forEach((sym) => {

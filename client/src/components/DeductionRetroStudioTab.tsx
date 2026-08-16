@@ -23,6 +23,7 @@ import {
   Filter,
   SlidersHorizontal,
   Target,
+  Lock,
 } from "lucide-react";
 import { DeductionProgressStepper, StageStep } from "./DeductionProgressStepper";
 import { PerStockDeductionRetroCard } from "./PerStockDeductionRetroCard";
@@ -117,6 +118,17 @@ interface DeductionRetroStudioTabProps {
   onOpenKnowledgeGraph: (symbol: string) => void;
   onOpenUnlockModal: () => void;
   onExecuteRebalance: (budget: number, risk: string) => void;
+  openDConnected?: boolean;
+  searxngConnected?: boolean;
+  ollamaStatus?: {
+    connected: boolean;
+    models: string[];
+    recommendedModel: string;
+    message: string;
+  };
+  selectedOllamaModel?: string;
+  onRefreshStatus?: () => void;
+  onStartDeduction?: () => void;
   marketSession?: {
     easternTimeStr: string;
     localTimeStr: string;
@@ -205,6 +217,12 @@ export const DeductionRetroStudioTab: React.FC<DeductionRetroStudioTabProps> = (
   onOpenKnowledgeGraph,
   onOpenUnlockModal,
   onExecuteRebalance,
+  openDConnected = false,
+  searxngConnected = false,
+  ollamaStatus = { connected: false, models: [], recommendedModel: "", message: "" },
+  selectedOllamaModel = "",
+  onRefreshStatus,
+  onStartDeduction,
   marketSession,
 }) => {
   const [customBudget, setCustomBudget] = useState<number>(1000);
@@ -216,6 +234,10 @@ export const DeductionRetroStudioTab: React.FC<DeductionRetroStudioTabProps> = (
   const [sortBy, setSortBy] = useState<"CERTAINTY_DESC" | "GOAL_PROB_DESC" | "ALLOCATION_DESC" | "PNL_DESC" | "SYMBOL_ASC">("CERTAINTY_DESC");
   const [searchStockQuery, setSearchStockQuery] = useState<string>("");
   const [selectedStockForModal, setSelectedStockForModal] = useState<any | null>(null);
+
+  // 4 大核心环境就绪状态判断
+  const ollamaReady = !!ollamaStatus?.connected && Array.isArray(ollamaStatus?.models) && ollamaStatus.models.length > 0;
+  const isAllPreflightReady = openDConnected && searxngConnected && ollamaReady && isUnlocked;
 
   // 选股与超跌建仓搜索/动作筛选
   const [screenerSearchQuery, setScreenerSearchQuery] = useState<string>("");

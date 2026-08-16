@@ -18,49 +18,54 @@ export interface SearXNGStatus {
 
 export class SearXNGSearchService {
   private isAttemptingStart: boolean = false;
+  private lastStartAttemptTime: number = 0;
 
   private get baseUrl(): string {
     return process.env.SEARXNG_URL || "http://127.0.0.1:8088";
   }
 
   public async getStatus(attemptAutoStart: boolean = true): Promise<SearXNGStatus> {
-    const searxngUrl = this.baseUrl;
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000);
+    const urlsToTry = [this.baseUrl, "http://127.0.0.1:8088", "http://localhost:8088"];
+    const uniqueUrls = Array.from(new Set(urlsToTry));
 
-      const resp = await fetch(`${searxngUrl}/`, {
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
+    for (const u of uniqueUrls) {
+      try {
+        const resp = await fetch(`${u}/`, {
+          signal: AbortSignal.timeout(2000),
+        });
 
-      if (resp.ok || resp.status === 200 || resp.status === 302) {
-        return {
-          connected: true,
-          searxngUrl,
-          message: "🟢 SearXNG 本地 Docker 容器运行正常",
-        };
+        if (resp.ok || resp.status === 200 || resp.status === 302 || resp.status === 303) {
+          return {
+            connected: true,
+            searxngUrl: u,
+            message: "🟢 SearXNG 本地 Docker 容器运行正常",
+          };
+        }
+      } catch (err: any) {
+        // console.log("[SearXNG debug err]", u, err.message);
       }
-    } catch (err: any) {}
+    }
 
-    if (attemptAutoStart && !this.isAttemptingStart) {
+    const now = Date.now();
+    if (attemptAutoStart && !this.isAttemptingStart && (now - this.lastStartAttemptTime > 15000)) {
       return await this.ensureSearXNGRunning();
     }
 
     return {
       connected: false,
-      searxngUrl,
-      message: `🔴 未检测到 SearXNG 服务 (${searxngUrl})`,
+      searxngUrl: this.baseUrl,
+      message: `🔴 未检测到 SearXNG 服务 (${this.baseUrl})`,
     };
   }
 
   public async ensureSearXNGRunning(): Promise<SearXNGStatus> {
-    if (this.isAttemptingStart) {
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+    const now = Date.now();
+    if (this.isAttemptingStart || (now - this.lastStartAttemptTime < 60000)) {
       return await this.getStatus(false);
     }
 
     this.isAttemptingStart = true;
+    this.lastStartAttemptTime = now;
 
     try {
       console.log("[SearXNGSearchService] 执行 `docker start searxng`...");
@@ -80,8 +85,7 @@ export class SearXNGSearchService {
       }
 
       try {
-        execSync("wsl -d Ubuntu -u root service docker start", { stdio: "ignore", timeout: 8000 });
-        execSync("wsl -d Ubuntu -u root docker start searxng", { stdio: "ignore", timeout: 8000 });
+        execSync('wsl -d Ubuntu -u root sh -c "service docker start && chmod 666 /var/run/docker.sock && docker start searxng"', { stdio: "ignore", timeout: 12000 });
       } catch (wslErr) {}
 
       for (let attempt = 1; attempt <= 10; attempt++) {
@@ -419,10 +423,10 @@ export class SearXNGSearchService {
       positionCapPct,
       stopLossPct,
       crossAsset: {
-        vix: openDSectorsData?.crossAsset?.vix ?? 15.2,
-        vixChange: openDSectorsData?.crossAsset?.vixChange ?? -0.3,
-        us10y: openDSectorsData?.crossAsset?.us10y ?? 4.28,
-        dxy: openDSectorsData?.crossAsset?.dxy ?? 103.8,
+        vix: openDSectorsData?.crossAsset?.vix ?? 0.0,
+        vixChange: openDSectorsData?.crossAsset?.vixChange ?? 0.0,
+        us10y: openDSectorsData?.crossAsset?.us10y ?? 0.0,
+        dxy: openDSectorsData?.crossAsset?.dxy ?? 0.0,
         spyChange: openDSectorsData?.spyChange || 0.0,
         qqqChange: openDSectorsData?.qqqChange || 0.0,
         iwmChange: openDSectorsData?.iwmChange || 0.0,

@@ -40,29 +40,68 @@ export const DeductionProgressStepper: React.FC<DeductionProgressStepperProps> =
   currentStage,
   loading,
 }) => {
-  if (!loading && !currentStage) return null;
+  const currentStep = currentStage?.step || (loading ? 1 : 0);
+  const progressPct = currentStage?.progressPercent || (loading ? 20 : 0);
 
-  const currentStep = currentStage?.step || 1;
-  const progressPct = currentStage?.progressPercent || 20;
+  const getHeaderTitle = () => {
+    if (loading) {
+      return `${currentStage?.title || "Ollama 大模型融合推演"}进行中...`;
+    }
+    if (currentStage && progressPct >= 100) {
+      return "全流程推演与复盘计算已完成";
+    }
+    if (currentStage) {
+      return `${currentStage.title}就绪`;
+    }
+    return "Ollama 大模型融合推演中枢";
+  };
+
+  const getHeaderDetail = () => {
+    if (loading) {
+      return currentStage?.detail || "正在调用底层量化算法与大模型分段推理...";
+    }
+    if (currentStage) {
+      return currentStage.detail || "推演数据已更新，随时可复盘查看。";
+    }
+    return "严格按执行顺序推进：OpenD连通 → 宏观搜刮 → 标的挖掘 → 大模型推演 → 定量指南生成。";
+  };
 
   return (
     <div className="glass-card p-5 border-cyan-500/30 bg-slate-900/90 shadow-xl space-y-4 animate-fade-in">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/40">
-            <Loader2 className={`w-5 h-5 ${loading ? "animate-spin" : ""}`} />
+          <div className={`p-2 rounded-xl border ${
+            loading
+              ? "bg-cyan-500/20 text-cyan-400 border-cyan-500/40"
+              : progressPct >= 100
+              ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40"
+              : "bg-slate-800/60 text-slate-400 border-slate-700/60"
+          }`}>
+            {loading ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : progressPct >= 100 ? (
+              <CheckCircle2 className="w-5 h-5" />
+            ) : (
+              <Bot className="w-5 h-5" />
+            )}
           </div>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-sm font-bold text-white">
-                {loading ? "Ollama 大模型融合推演进行中..." : "推演与复盘计算完成"}
+                {getHeaderTitle()}
               </h3>
-              <span className="px-2 py-0.5 text-[11px] font-semibold rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
-                进度: {progressPct}%
+              <span className={`px-2 py-0.5 text-[11px] font-semibold rounded-full border ${
+                loading
+                  ? "bg-cyan-500/10 text-cyan-400 border-cyan-500/30 animate-pulse"
+                  : progressPct >= 100
+                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                  : "bg-slate-800 text-slate-400 border-slate-700"
+              }`}>
+                {loading ? `进度: ${progressPct}%` : progressPct >= 100 ? "已完成: 100%" : "等待就绪启动"}
               </span>
             </div>
-            <p className="text-xs text-slate-400">{currentStage?.detail || "正在处理..."}</p>
+            <p className="text-xs text-slate-400 mt-0.5">{getHeaderDetail()}</p>
           </div>
         </div>
       </div>
@@ -70,8 +109,12 @@ export const DeductionProgressStepper: React.FC<DeductionProgressStepperProps> =
       {/* Progress Bar */}
       <div className="w-full bg-slate-950 rounded-full h-2 overflow-hidden border border-slate-800">
         <div
-          className="bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-500 h-full rounded-full transition-all duration-500 ease-out"
-          style={{ width: `${progressPct}%` }}
+          className={`h-full rounded-full transition-all duration-500 ease-out ${
+            progressPct >= 100
+              ? "bg-emerald-500"
+              : "bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-500"
+          }`}
+          style={{ width: `${Math.max(progressPct, loading ? 10 : 0)}%` }}
         />
       </div>
 

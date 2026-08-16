@@ -1,4 +1,4 @@
-import { ActionItem, CapitalSpaceAnalysis } from "../types/stockTypes";
+import { ActionItem, CapitalSpaceAnalysis, OpenDSnapshotItem } from "../types/stockTypes";
 import { goalDrivenQuantEngine } from "./goalDrivenQuantEngine";
 
 export interface DynamicRiskTargetResult {
@@ -16,13 +16,19 @@ export interface DynamicRiskTargetResult {
   goalDrivenRationale: string;
   goalAttainmentProbability: number;
   certaintyScore: number;
+  atr?: number;
+  atrPct?: number;
+  perShareRisk?: number;
+  maxRiskBudget?: number;
 }
 
 export class QuantRiskManager {
   /**
-   * 结合标的 ATR 真实波幅、目标收益率 G%、限定跨度 T 与可用资金空间，计算高胜率的止损止盈区间与持仓头寸
+   * 结合标的 ATR 真实波幅、目标收益率 G%、限定跨度 T 与单笔 1.5% 固定风险预算，计算高胜率的止损止盈区间与持仓头寸
    */
   public calculateDynamicRiskTargets(params: {
+    symbol?: string;
+    companyName?: string;
     currentPrice: number;
     action: "BUY" | "TRIM" | "HOLD" | "SELL";
     urgency?: "HIGH" | "MEDIUM" | "LOW";
@@ -31,22 +37,30 @@ export class QuantRiskManager {
     availableCash?: number;
     totalBudget?: number;
     customAtr?: number;
+    snapshot?: OpenDSnapshotItem;
     targetProfitGoalPct?: number;
     targetTimeHorizonDays?: number;
     maxDrawdownPct?: number;
     strategyCategoryLabel?: string;
   }): DynamicRiskTargetResult {
     const {
+      symbol = "",
+      companyName = "",
       currentPrice,
       action,
       spilloverAlphaScore = 0,
-      availableCash = 5000,
-      totalBudget = 10000,
+      availableCash = 0,
+      totalBudget = 0,
       targetProfitGoalPct = 8.0,
       targetTimeHorizonDays = 5,
       maxDrawdownPct = 4.0,
       strategyCategoryLabel,
+      snapshot,
+      customAtr,
     } = params;
+
+    const sym = symbol || snapshot?.symbol || "STOCK";
+    const cName = companyName || snapshot?.name || sym;
 
     if (currentPrice <= 0) {
       return {
@@ -64,6 +78,10 @@ export class QuantRiskManager {
         goalDrivenRationale: "",
         goalAttainmentProbability: 50,
         certaintyScore: 50,
+        atr: 0,
+        atrPct: 0,
+        perShareRisk: 0,
+        maxRiskBudget: 0,
       };
     }
 
@@ -73,24 +91,52 @@ export class QuantRiskManager {
       targetProfitGoalPct,
       targetTimeHorizonDays,
       spilloverAlpha: spilloverAlphaScore,
+      snapshot,
+      customAtr,
     });
 
     const certainty = goalDrivenQuantEngine.calculateCertaintyScore({
       goalProbability: goalAttain.goalAttainmentProbability,
+      snapshot,
     });
 
-    // 2. 基于资金上限与凯利公式计算持仓头寸 (股数分配)
-    const effectiveCapital = Math.min(availableCash, totalBudget);
-    let positionWeight = 0.25; // 默认单票 25% 仓位
+    // 2. 基于单笔 1.5% 最大可承受损失 (Fixed Risk Budget) 与 资金上限 计算持仓头寸
+    const effectiveCapital = totalBudget > 0 && availableCash > 0
+      ? Math.min(availableCash, totalBudget)
+      : (availableCash > 0 ? availableCash : totalBudget);
+
+    let positionWeight = 0.25; // 默认单票 25% 资金上限
 
     if (certainty.certaintyScore > 80) {
-      positionWeight = 0.35; // 高确定性机会分配 35%
+      positionWeight = 0.35; // 高确定性机会上限 35%
     } else if (certainty.certaintyScore < 60) {
       positionWeight = 0.12; // 低确定性压低至 12%
     }
 
-    const maxAllocAmount = Math.max(currentPrice, effectiveCapital * positionWeight);
-    let suggestedShares = Math.floor(maxAllocAmount / currentPrice);
+    // 预求解基于 ATR 的交易路径获取真实单股风险
+    const prePath = goalDrivenQuantEngine.formulateTradePath({
+      symbol: sym,
+      companyName: cName,
+      currentPrice,
+      action,
+      targetProfitGoalPct,
+      targetTimeHorizonDays,
+      maxDrawdownPct,
+      certaintyScore: certainty.certaintyScore,
+      goalProbability: goalAttain.goalAttainmentProbability,
+      strategyCategoryLabel,
+      snapshot,
+      customAtr,
+    });
+
+    const maxRiskBudget = effectiveCapital > 0 ? Math.max(1.0, effectiveCapital * 0.015) : 0;
+    const perShareRisk = Math.max(0.1, prePath.perShareRisk);
+    const sharesByRisk = maxRiskBudget > 0 ? Math.floor(maxRiskBudget / perShareRisk) : 0;
+    const maxAllocAmount = effectiveCapital > 0 ? Math.max(currentPrice, effectiveCapital * positionWeight) : currentPrice;
+    const sharesByCapital = Math.floor(maxAllocAmount / currentPrice);
+
+    let suggestedShares = Math.min(sharesByCapital, Math.max(1, sharesByRisk));
+
     if (suggestedShares <= 0 && action === "BUY" && effectiveCapital >= currentPrice) {
       suggestedShares = 1;
     }
@@ -100,10 +146,10 @@ export class QuantRiskManager {
 
     const estimatedAmount = Number((suggestedShares * currentPrice).toFixed(2));
 
-    // 3. 构建交易路径与时间止损规则
+    // 3. 构建完整交易路径与时间止损规则
     const path = goalDrivenQuantEngine.formulateTradePath({
-      symbol: "ASSET",
-      companyName: "Asset",
+      symbol: sym,
+      companyName: cName,
       currentPrice,
       action,
       targetProfitGoalPct,
@@ -114,6 +160,8 @@ export class QuantRiskManager {
       allocatedAmount: estimatedAmount,
       suggestedShares,
       strategyCategoryLabel,
+      snapshot,
+      customAtr,
     });
 
     return {
@@ -131,6 +179,10 @@ export class QuantRiskManager {
       goalDrivenRationale: path.goalDrivenRationale,
       goalAttainmentProbability: goalAttain.goalAttainmentProbability,
       certaintyScore: certainty.certaintyScore,
+      atr: path.atr,
+      atrPct: path.atrPct,
+      perShareRisk: path.perShareRisk,
+      maxRiskBudget: Number(maxRiskBudget.toFixed(2)),
     };
   }
 
@@ -142,13 +194,17 @@ export class QuantRiskManager {
     currentPrice: number,
     spilloverAlpha: number,
     networkRisk: number,
-    availableCash: number = 5000,
-    totalBudget: number = 10000,
+    availableCash: number = 0,
+    totalBudget: number = 0,
     targetProfitGoalPct: number = 8.0,
     targetTimeHorizonDays: number = 5,
-    maxDrawdownPct: number = 4.0
+    maxDrawdownPct: number = 4.0,
+    snapshot?: OpenDSnapshotItem,
+    customAtr?: number
   ): ActionItem {
     const quantTargets = this.calculateDynamicRiskTargets({
+      symbol: rawAction.symbol,
+      companyName: rawAction.companyName,
       currentPrice,
       action: rawAction.action,
       urgency: rawAction.urgency,
@@ -160,13 +216,15 @@ export class QuantRiskManager {
       targetTimeHorizonDays,
       maxDrawdownPct,
       strategyCategoryLabel: rawAction.strategyCategoryLabel,
+      snapshot,
+      customAtr,
     });
 
     return {
       ...rawAction,
       estimatedPrice: currentPrice,
-      suggestedShares: quantTargets.suggestedShares > 0 ? quantTargets.suggestedShares : rawAction.suggestedShares || 10,
-      estimatedAmount: quantTargets.estimatedAmount > 0 ? quantTargets.estimatedAmount : Number((currentPrice * (rawAction.suggestedShares || 10)).toFixed(2)),
+      suggestedShares: quantTargets.suggestedShares > 0 ? quantTargets.suggestedShares : rawAction.suggestedShares || 1,
+      estimatedAmount: quantTargets.estimatedAmount > 0 ? quantTargets.estimatedAmount : Number((currentPrice * (rawAction.suggestedShares || 1)).toFixed(2)),
       targetPrice: quantTargets.targetPrice,
       stopLossPrice: quantTargets.stopLossPrice,
       takeProfitPct: quantTargets.takeProfitPct,
@@ -181,8 +239,13 @@ export class QuantRiskManager {
       goalDrivenRationale: quantTargets.goalDrivenRationale,
       targetTimeHorizonDays,
       targetProfitGoalPct,
+      atr: quantTargets.atr,
+      atrPct: quantTargets.atrPct,
+      perShareRisk: quantTargets.perShareRisk,
+      maxRiskBudget: quantTargets.maxRiskBudget,
     };
   }
 }
 
 export const quantRiskManager = new QuantRiskManager();
+

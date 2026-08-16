@@ -40,7 +40,93 @@ export class DailyStrategyDirector {
     rawOllamaOutput?: string;
   } | null = null;
 
+  public async checkPreflightReadiness(): Promise<{
+    isAllReady: boolean;
+    openD: { ready: boolean; message: string };
+    searxng: { ready: boolean; message: string };
+    ollama: { ready: boolean; message: string; recommendedModel?: string };
+    tradeUnlock: { ready: boolean; message: string };
+    missingItems: string[];
+  }> {
+    const openDAlive = await openDaemonManager.checkOpenDAlive();
+    const searxng = await searxngSearchService.getStatus(false);
+    const ollama = await ollamaService.getStatus();
+    const unlockStatus = await moomooAdapter.checkTradeUnlockedStatus();
+
+    const openDReady = openDAlive;
+    const searxngReady = searxng.connected;
+    const ollamaReady = ollama.connected && ollama.models.length > 0;
+    const tradeUnlockReady = unlockStatus.unlocked;
+
+    const missingItems: string[] = [];
+    if (!openDReady) missingItems.push("MooMoo OpenD网关(11111)");
+    if (!searxngReady) missingItems.push("SearXNG全网检索(8088)");
+    if (!ollamaReady) missingItems.push("Ollama大模型服务(11434)");
+    if (!tradeUnlockReady) missingItems.push("交易权限密码解锁");
+
+    const isAllReady = openDReady && searxngReady && ollamaReady && tradeUnlockReady;
+
+    return {
+      isAllReady,
+      openD: {
+        ready: openDReady,
+        message: openDReady ? "🟢 OpenD 端口 11111 已连通" : "🔴 OpenD 离线 (端口 11111)",
+      },
+      searxng: {
+        ready: searxngReady,
+        message: searxngReady ? "🟢 SearXNG 检索服务已就绪" : "🔴 SearXNG 服务离线",
+      },
+      ollama: {
+        ready: ollamaReady,
+        message: ollamaReady ? `🟢 Ollama 在线 (${ollama.models.length}个模型)` : "🔴 Ollama 服务未启动或未安装模型",
+        recommendedModel: ollama.recommendedModel,
+      },
+      tradeUnlock: {
+        ready: tradeUnlockReady,
+        message: tradeUnlockReady ? "🟢 交易权限已解锁" : "🔒 交易权限未解锁 (需要密码)",
+      },
+      missingItems,
+    };
+  }
+
+  private inFlightStrategyPromise: Promise<any> | null = null;
+
   public async generateDailyStrategy(
+    portfolioId: string = "default-portfolio",
+    customBudget?: number,
+    ollamaModel?: string,
+    onProgress?: (stage: StrategyProgressStage) => void,
+    targetProfitGoalPct: number = 8.0,
+    targetTimeHorizonDays: number = 5,
+    maxDrawdownPct: number = 4.0,
+    simulatedTime?: Date | string | number,
+    marketPhaseOverride?: MarketSessionPhase
+  ): Promise<any> {
+    if (this.inFlightStrategyPromise) {
+      console.log("[DailyStrategyDirector] 策略生成已在进行中，合并等待当前进行中的推演任务...");
+      return await this.inFlightStrategyPromise;
+    }
+
+    this.inFlightStrategyPromise = this.executeDailyStrategyInternal(
+      portfolioId,
+      customBudget,
+      ollamaModel,
+      onProgress,
+      targetProfitGoalPct,
+      targetTimeHorizonDays,
+      maxDrawdownPct,
+      simulatedTime,
+      marketPhaseOverride
+    );
+
+    try {
+      return await this.inFlightStrategyPromise;
+    } finally {
+      this.inFlightStrategyPromise = null;
+    }
+  }
+
+  private async executeDailyStrategyInternal(
     portfolioId: string = "default-portfolio",
     customBudget?: number,
     ollamaModel?: string,
@@ -93,6 +179,13 @@ export class DailyStrategyDirector {
     this.liveStageData = {};
     this.liveDeductionPipeline = null;
 
+    // 🌟 核心前置就绪阻塞校验：在 OpenD、SearXNG、本地模型、交易解锁 全部就绪后才进入 Step 1
+    const preflight = await this.checkPreflightReadiness();
+    if (!preflight.isAllReady) {
+      const missingText = preflight.missingItems.join("、");
+      throw new Error(`【前置环境阻塞】Step 1 无法启动！以下依赖项尚未就绪：${missingText}。请确保依赖项就绪且交易权限已解锁后再启动推演。`);
+    }
+
     // STEP 1: 确保 OpenD 通道与自选股连通 (OPEND_CONNECT)
     notifyStage(1, "OPEND_CONNECT", "MooMoo OpenD 持仓自选连通", "测试 127.0.0.1:11111 TCP 原生通道拉取真实持仓与自选股...", 20);
     const openDCheck = await openDaemonManager.ensureOpenDRunning();
@@ -114,7 +207,7 @@ export class DailyStrategyDirector {
           id: portfolioId,
           name: "MooMoo 美股主仓位",
           cashBalance: openDCash,
-          totalBudget: customBudget ?? 1000.0,
+          totalBudget: customBudget ?? openDCash,
           riskPreference: "BALANCED",
           positions: {
             create: openDPositions.map((p) => ({
@@ -660,7 +753,7 @@ export class DailyStrategyDirector {
         if (item.strategyCategory === "OVERSOLD_BUY" || item.strategyCategory === "FUNDAMENTAL_BUY" || item.strategyCategory === "NEWS_CATALYST_BUY" || item.strategyCategory === "CAPITAL_INFLOW_BUY") {
           autoAction = "BUY";
           autoActionType = isHolding ? "ADD_POSITION" : "OPEN_POSITION";
-          shares = Math.max(1, Math.floor(Math.min(budgetToUse * 0.35, 1000) / curPrice));
+          shares = Math.max(1, Math.floor((budgetToUse * 0.35) / curPrice));
           rationale = `[${item.symbol}] 触发 ${item.strategyCategoryLabel || "建仓"} 信号 (${item.strategyCategoryReason || ""})，建议建仓 ${shares} 股。`;
         } else if (isHolding && pnlPct >= 18.0) {
           autoAction = "TRIM";

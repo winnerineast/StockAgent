@@ -92,14 +92,19 @@ export async function computeRetroPnL(
   let totalMatchCount = 0;
   let avoidedLossSum = 0;
   const lessons: string[] = [];
+  const returnPercentages: number[] = [];
 
   actions.forEach((act) => {
     const sym = act.symbol.toUpperCase();
     const curPrice = liveQuotesMap?.get(sym) || act.estimatedPrice;
-    const trigPrice = act.estimatedPrice || curPrice;
+    const trigPrice = act.estimatedPrice > 0 ? act.estimatedPrice : curPrice;
 
     if (act.action === "TRIM" || act.action === "SELL") {
-      const dropAmount = (trigPrice - curPrice) * act.suggestedShares;
+      const priceDelta = trigPrice - curPrice;
+      const dropAmount = priceDelta * (act.suggestedShares || 1);
+      const retPct = trigPrice > 0 ? (priceDelta / trigPrice) * 100 : 0;
+      returnPercentages.push(retPct);
+
       if (dropAmount > 0) {
         avoidedLossSum += dropAmount;
         lessons.push(`对 [${sym}] 执行 ${act.action === "SELL" ? "清仓" : "减仓"}，股价随后下跌，成功规避 $${dropAmount.toFixed(2)} 回调损失`);
@@ -110,13 +115,18 @@ export async function computeRetroPnL(
         totalMatchCount++;
       }
     } else if (act.action === "BUY") {
+      const priceDelta = curPrice - trigPrice;
+      const retPct = trigPrice > 0 ? (priceDelta / trigPrice) * 100 : 0;
+      returnPercentages.push(retPct);
+
       if (curPrice >= trigPrice) {
-        lessons.push(`对 [${sym}] 在建议价触达后按计划建仓，向上验证多头预期`);
+        lessons.push(`对 [${sym}] 在建议价触达后按计划建仓，向上验证多头预期 (+${retPct.toFixed(1)}%)`);
         totalMatchCount++;
       } else {
-        lessons.push(`对 [${sym}] 建仓建议后短线盘整，需防范支撑位下破`);
+        lessons.push(`对 [${sym}] 建仓建议后短线盘整 (${retPct.toFixed(1)}%)，需防范 ATR 支撑位下破`);
       }
     } else {
+      returnPercentages.push(0);
       totalMatchCount++;
     }
   });
@@ -124,13 +134,44 @@ export async function computeRetroPnL(
   const accuracyScore = Number(((totalMatchCount / actions.length) * 100).toFixed(1));
   const avoidedLoss = Number(avoidedLossSum.toFixed(2));
 
+  // vn.py 经典量化复盘指标 (Sortino Ratio, Downside Risk, Expectancy)
+  const wins = returnPercentages.filter((r) => r > 0);
+  const losses = returnPercentages.filter((r) => r < 0);
+  const winCount = wins.length;
+  const winRate = Number(((winCount / Math.max(1, returnPercentages.length)) * 100).toFixed(1));
+
+  const avgWin = wins.length > 0 ? wins.reduce((a, b) => a + b, 0) / wins.length : 0;
+  const avgLoss = losses.length > 0 ? Math.abs(losses.reduce((a, b) => a + b, 0) / losses.length) : 0;
+  const winLossRatio = avgLoss > 0 ? Number((avgWin / avgLoss).toFixed(2)) : (avgWin > 0 ? 3.0 : 1.0);
+
+  // 单笔收益率数学期望 E = P(Win) * AvgWin - P(Loss) * AvgLoss
+  const profitExpectancy = Number(
+    ((winRate / 100) * avgWin - ((100 - winRate) / 100) * avgLoss).toFixed(2)
+  );
+
+  // 下行标准差 Downside Deviation 与 索提诺比率 Sortino Ratio (仅惩罚下行负收益波动)
+  const downsideSquared = losses.map((r) => r * r);
+  const downsideDeviation = downsideSquared.length > 0
+    ? Number(Math.sqrt(downsideSquared.reduce((a, b) => a + b, 0) / returnPercentages.length).toFixed(2))
+    : 0;
+
+  const meanReturn = returnPercentages.reduce((a, b) => a + b, 0) / returnPercentages.length;
+  const sortinoRatio = downsideDeviation > 0
+    ? Number((meanReturn / downsideDeviation).toFixed(2))
+    : (meanReturn > 0 ? 2.5 : 0);
+
   return {
     accuracyScore,
     executionMatchRate: 100.0,
     avoidedLoss,
     totalRealizedPnL: avoidedLoss,
-    summaryText: `针对前次 ${actions.length} 笔建议执行核验：预测对齐率 ${accuracyScore}%，规避潜在回调损失 $${avoidedLoss.toFixed(2)}`,
+    summaryText: `针对前次 ${actions.length} 笔建议执行核验：预测对齐率 ${accuracyScore}%，规避潜在回调损失 $${avoidedLoss.toFixed(2)}，索提诺比率 ${sortinoRatio} (期望值 +${profitExpectancy}%)`,
     lessonsLearned: lessons,
+    sortinoRatio,
+    downsideDeviation,
+    profitExpectancy,
+    winLossRatio,
+    winRate,
   };
 }
 

@@ -195,6 +195,13 @@ export interface ActionItem {
   expectedPnLAmount?: number;          // 目标达成预期净盈利 ($)
   goalDrivenRationale?: string;        // 消除迷茫度的核心因果逻辑
   evidence?: Evidence5Pillars;
+
+  // vn.py 量化内核新增字段
+  atr?: number;                        // 14日真实波幅 ($)
+  atrPct?: number;                     // ATR 占当前股价百分比 (%)
+  perShareRisk?: number;               // 单股止损风险敞口 ($)
+  maxRiskBudget?: number;              // 单笔最大允许风险金 ($，按 1.5% 账户资金预算)
+  positionWeightPct?: number;          // 建议仓位占总资产比率 (%)
 }
 
 export interface RiskAlert {
@@ -390,6 +397,13 @@ export interface RetroPnLResult {
   totalRealizedPnL: number;
   summaryText: string;
   lessonsLearned: string[];
+
+  // vn.py 经典量化复盘统计指标
+  sortinoRatio?: number;        // 索提诺比率 (仅惩罚下行负收益波动)
+  downsideDeviation?: number;   // 下行风险标准差 (%)
+  profitExpectancy?: number;    // 单笔数学期望值 ($ 或 %)
+  winLossRatio?: number;        // 盈亏比 (AvgWin / AvgLoss)
+  winRate?: number;             // 胜率 (%)
 }
 
 export interface SectorSnapshotItem {

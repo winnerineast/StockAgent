@@ -62,10 +62,10 @@ export class MacroSnapshotStoreService {
 
   private mapToDTO(record: any): DailyMacroSnapshotDTO {
     let crossAsset: CrossAssetAnchors = {
-      vix: 15.2,
+      vix: 0,
       vixChange: 0,
-      us10y: 4.28,
-      dxy: 103.8,
+      us10y: 0,
+      dxy: 0,
       spyChange: 0,
       qqqChange: 0,
       iwmChange: 0,

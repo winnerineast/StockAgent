@@ -40,6 +40,16 @@ stockRouter.get("/ollama/models", async (_req: Request, res: Response) => {
   return res.json({ success: true, data: status });
 });
 
+// 1.6 前置四大核心依赖自检与阻塞检查 (OpenD, SearXNG, 本地大模型, 交易解锁)
+stockRouter.get("/strategy/preflight", async (_req: Request, res: Response) => {
+  try {
+    const preflight = await dailyStrategyDirector.checkPreflightReadiness();
+    return res.json({ success: true, data: preflight });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // 2. 从 OpenD / DB 获取持仓与资产概览
 stockRouter.get("/portfolio", async (_req: Request, res: Response) => {
   try {

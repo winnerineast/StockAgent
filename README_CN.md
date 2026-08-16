@@ -1,8 +1,8 @@
-# StockAgent Studio - 智能选股、推演与复盘操盘系统 (SPA)
+# StockAgent Studio - 上班族低频智能操盘与策略复盘系统 (SPA)
 
 [English Version](README.md) | **中文文档**
 
-> 基于 **100% 真实 MooMoo OpenD 原生 TCP 数据** + **本地 Docker SearXNG 极速全网搜索 (Bloomberg/CNBC/Reuters)** + **硬件自适应 Ollama 本地大模型** 的全栈美股智能选股、5 大策略多维推演与复盘操盘系统。
+> **专为上班族量身打造**：以“天”为单位的低频下班操盘与复盘系统。基于 **100% 真实 MooMoo OpenD 原生 TCP 实盘通道** + **本地 Docker/WSL SearXNG 极速全网搜索** + **硬件自适应 Ollama 本地大模型**，深度融合 **vn.py 经典量化风控与持仓管理架构**，严禁机器自动下单，提供精准到股数的定量调仓指南。
 
 ---
 
@@ -10,91 +10,82 @@
 
 ```mermaid
 flowchart TD
-    subgraph S1 [Step 1: OpenD 实盘与资产对接]
-        A[OpenD 原生网关 11111] -->|真实拉取| B[实盘持仓 + 现金余额 + 官方自选股]
+    subgraph Preflight [前置就绪屏障 (Execution Order Barrier)]
+        P1[🔌 MooMoo OpenD: 11111]
+        P2[🔍 SearXNG 检索: 8088]
+        P3[🤖 本地大模型: 11434]
+        P4[🔐 交易权限密码已解锁]
+        P1 & P2 & P3 & P4 -->|4大依赖全部就绪| Barrier[🚀 启动 Step 1 流水线]
     end
 
-    subgraph S2 [Step 2: 宏观资讯与大盘定调]
-        C[SearXNG Docker 8088] -->|定向检索| D[Bloomberg / CNBC / Reuters 头条资讯]
-        D -->|Ollama 宏观提炼| E[情绪评分 + 明星主线 + 操盘基调 + 精简提示词]
+    subgraph S1 [Step 1: OpenD 原生实盘与资产对接]
+        Barrier --> A[OpenD 原生网关 TCP 11111]
+        A -->|100% 真实拉取·无Mock| B[实盘持仓 + 可用现金 + 官方自选股]
     end
 
-    subgraph S3 [Step 3: 全美股扫描与 5 大策略分类过滤]
-        F[全美股动态雷达池 349个行业板块] --> G[优先级: 1.实盘持仓 > 2.自选股 > 3.全美股池]
+    subgraph S2 [Step 2: SearXNG 全网宏观资讯与大盘定调]
+        B --> C[SearXNG 双通道自动唤醒 8088]
+        C -->|定向抓取| D[Bloomberg / CNBC / Reuters / Wall Street 头条资讯]
+        D -->|Ollama 宏观提炼| E[市场情绪评分 + 明星主线 + 操盘基调 + 宏观约束上下文]
+    end
+
+    subgraph S3 [Step 3: 全美股多因子 5 大策略归类过滤]
+        E --> F[全美股雷达池 349个行业板块]
+        F --> G[优先级: 1.实盘持仓 > 2.自选关注 > 3.全美股雷达]
         G --> H[OpenD 52周高低点、PE、EPS、净利润、换手率与机构主力资金]
-        H --> I{多因子 5 大策略归类}
-        I -->|📉 超跌建仓| J1[高点回撤 >= 15% 且估值合理]
+        H --> I{多因子 5 大策略筛选}
+        I -->|📉 超跌建仓| J1[52周高点回撤 >= 15% 且估值合理]
         I -->|💎 基本面亮眼建仓| J2[OpenD PE <= 38 且稳健盈利]
-        I -->|🚀 消息面强劲建仓| J3[盘前跳空或重磅利好催化]
+        I -->|🚀 消息面催化建仓| J3[盘前跳空或重磅利好共振]
         I -->|🏦 大资金进入建仓| J4[OpenD 机构超大单持续净流入]
         I -->|👀 可以观望| J5[持仓/自选箱体震荡维持底仓]
-        I -->|不符合 5 大策略| J6[❌ 直接略过 Skip]
-        J1 & J2 & J3 & J4 & J5 --> K[候选推演列表]
-        K -.->|后台异步非阻塞并发| L[创建/更新专属标的知识图谱]
+        I -->|不符合策略| J6[❌ 自动略过 Skip]
+        J1 & J2 & J3 & J4 & J5 --> K[入选候选推演列表]
+        K -.->|后台异步非阻塞| L[创建/更新专属标的知识图谱]
     end
 
-    subgraph S4 [Step 4: Ollama 大模型融合推演]
-        E & K --> M[注入宏观约束与策略归属提示词]
-        M --> N[Map-Reduce 分段并发推理生成精确定量调仓指南]
+    subgraph S4 [Step 4: Ollama 大模型融合推演 + vn.py 量化风控]
+        E & K --> M[注入目标参数 (G%目标收益, T日跨度, D%最大回撤)]
+        M --> N[Ollama Map-Reduce 分批限流推理]
+        N --> Q[vn.py ATR 真实波幅 + 动态止损止盈 + 单标的仓位上限截断]
     end
 
-    subgraph S5 [Step 5: 决策矩阵与复盘落库]
-        N --> O[前端 5 大分类 Pill 看板 + 决策矩阵 + 止盈止损防线]
+    subgraph S5 [Step 5: 决策执行矩阵 & 实盘经验闭环落库]
+        Q --> O[生成精确到股数、入场区间的定量调仓指南]
+        O --> R[一键复制下单指令 (供上班族手机端手动下单)]
+        O --> S[实盘对账与三态归因: 🟢成功经验 / 🔴失败教训 / ⚪随机噪音]
     end
 ```
 
 ---
 
-### 1. 100% 真实 OpenD 官方数据源 & 彻底零硬编码 (Zero-Hardcoding)
-- **剔除所有静态硬编码**：彻底删除了所有静态写死的股票列表与默认兜底数字（如 `100.0`, `1000.0`）。
-- **动态全量美股与板块池**：通过 OpenD SDK (`get_user_security`, `get_plate_stock`, `get_stock_basicinfo`) 动态拉取全量美股代码与 349 个官方行业板块。
-- **深度估值与主力资金流**：所有股价、52 周高低点、市盈率 PE/PE TTM、市净率 PB、每股收益 EPS、净利润、换手率以及机构主力资金流向 (`main_in_flow`, `in_flow`) 均直连 OpenD 获取。
+## 💡 深度借鉴 vn.py 的 4 大核心量化中枢架构
+
+针对上班族“以天为单位、低频下班操盘、严禁机器自动下单”的实际业务场景，系统深度借鉴了 vn.py 量化框架的底层精髓：
+
+| 借鉴模块 | vn.py 经典量化设计 | StockAgent 落地实现与文件位置 |
+| :--- | :--- | :--- |
+| **组合风控与头寸缩放** | `PortfolioStrategy` & `RiskManager` 固定风险预算 | [`quantRiskManager.ts`](file:///c:/Users/lilin/StockAgent/server/src/services/quantRiskManager.ts)：基于 ATR 真实波动率与用户 $G\%$ 目标收益率、$D\%$ 回撤容忍度，反推精确到股数的建议买入量，单标的强制 $\le 35\%$ 组合上限。 |
+| **实盘跟踪与归因闭环** | `TradeRecorder` & `PerformanceAnalysis` 绩效归因 | [`deductionVerificationService.ts`](file:///c:/Users/lilin/StockAgent/server/src/services/deductionVerificationService.ts)：点对点比对过去 $T$ 天建议 vs 真实收盘价，三态自动归因（`SUCCESS`/`FAILURE`/`RANDOM_NOISE`），教训经验自动反哺大模型上下文。 |
+| **时态状态机驱动** | `TradingCalendar` & `EventEngine` 交易日历驱动 | [`marketCalendarService.ts`](file:///c:/Users/lilin/StockAgent/server/src/services/marketCalendarService.ts)：划分盘前 (`PRE_MARKET`)、盘中 (`INTRADAY`)、盘后 (`POST_MARKET`) 与周末 (`WEEKEND`)，下班后自动切入盘后复盘与次日推演态。 |
+| **统一网关封装** | `BaseGateway` 原生协议与数据契约封装 | [`moomooAdapter.ts`](file:///c:/Users/lilin/StockAgent/server/src/services/moomooAdapter.ts)：将 MooMoo OpenD 底层 Protobuf/TCP 封装为标准的持仓、资产与盘口接口。 |
 
 ---
 
-### 2. 全美股多因子 5 大策略分类引擎
-严格将候选标的归类至 5 大明确策略，不符合者自动跳过：
-1. 📉 **超跌建仓 (`OVERSOLD_BUY`)**：距离 52 周高点深度回撤 ≥ 15%，且 PE 估值健康未泡沫化，属于高盈亏比反弹/反转机会。
-2. 💎 **基本面亮眼建仓 (`FUNDAMENTAL_BUY`)**：OpenD 官方 PE ≤ 38 且 EPS > 0，盈利能力稳健。
-3. 🚀 **消息面强劲建仓 (`NEWS_CATALYST_BUY`)**：SearXNG 舆情与新闻强催化，或盘前跳空 ≥ 1.5%。
-4. 🏦 **近期大资金进入建仓 (`CAPITAL_INFLOW_BUY`)**：OpenD 机构超大单主力持续净流入。
-5. 👀 **可以观望 (`WATCH_AND_WAIT`)**：持仓或关注标的处于正常箱体震荡区间，维持现有底仓跟踪。
-- **自动略过 (Skip)**：任何不属于以上 5 类的标的直接被略过，不浪费大模型算力。
-- **严格优先级**：实盘持仓 (P1) > 个人自选股 (P2) > 全美股雷达池 (P3)。
+## 👔 专为上班族打造的特色功能
 
----
-
-### 3. 后台异步非阻塞操盘知识图谱更新
-- **非阻塞并发**：当标的通过多因子初筛进入候选推演列表后，系统利用 `setImmediate` 在后台以非阻塞方式异步创建或更新其专属知识图谱；
-- **智能装载节点**：自动将最新催化剂新闻、5 大策略归属理由与机构资金流向更新至标的图谱中，主推演流程毫秒级流畅运行。
-
----
-
-### 4. SearXNG 全网宏观大盘动态与消息面全景
-- **定向权威财经源检索**：直接抓取 Bloomberg、CNBC、Reuters 等权威媒体的大盘走势与盘前异动。
-- **情绪定调徽章与明星主线**：自动计算市场情绪分值（如多头顺势、防守避险、震荡分化），并高亮算力芯片、电力能源、防御性消费等明星主线。
-- **操盘总纲与提示词提炼**：生成今日策略基调、仓位调控与风险防范要求，并自动提炼为 Prompt 上下文注入下游个股推演。
-
----
-
-### 5. 5 步流水线与前端 UI 毫秒级三态严密同步
-- **可视化动态步进器 (`DeductionProgressStepper`)**：
-  - `Step 1`: **OpenD 持仓与资产连通**
-  - `Step 2`: **SearXNG 全网宏观与明星板块搜刮**
-  - `Step 3`: **候选池构建与标的多维挖掘 (5大策略分类)**
-  - `Step 4`: **Ollama 大模型融合推演 (Map-Reduce)**
-  - `Step 5`: **精确定量指南生成与策略复盘落库**
-- **三态精准联动遮罩 (`StepSyncOverlay`)**：
-  - ⚡ **`ACTIVE`（正在执行）**：呼吸光边框、动态 Spinner，实时展示底层处理明细。
-  - ⏳ **`PENDING`（排队等待）**：优雅低透明度毛玻璃，明确提示 `⏳ 阶段排队中 · 等待 Step N 完成后自动解锁`。
-  - ✓ **`DONE`（已完成）**：立即解除遮罩，清晰呈现最新计算结果。
-
----
-
-### 6. 硬件自适应与 Ollama 大模型算力调度
-- **硬件参数自动感知**：自动识别显卡显存 (VRAM)、系统内存 (RAM) 与 CPU 核心数（如 `💻 63.8GB RAM | NVIDIA GeForce RTX 4090 (24GB VRAM)`）。
-- **智能推荐算力契合模型**：根据硬件容量与金融推理能力综合评分，自动推荐最佳模型（如 **`⭐ [硬件推荐] qwen3.6:27b`**）。
-- **Map-Reduce 分段并发推理**：针对多标的并行推演，生成包含买卖股数、现价、目标价、止损线与风控理由的完整结构化指南。
+1. **严禁机器自动下单 (Zero Automated Execution)**：
+   - 彻底避免由于网络波动、API 滑点或极端行情导致的机器强平风险；
+   - 每个推荐标的卡片均提供 **「📋 复制下单指令」**，一键复制 `标的 / 买卖方向 / 股数 / 限价`，方便上班族晚上在手机或电脑端自主确认挂单。
+2. **执行顺序屏障 (Preflight Barrier)**：
+   - 系统严密把控执行顺序：当且仅当 **OpenD (11111)**、**SearXNG (8088)**、**Ollama 本地模型 (11434)** 与 **交易解锁** 4 项全部就绪后，才正式启动 Step 1 推演流水线。
+3. **Single-Flight 服务端单飞互斥锁与限流**：
+   - 全局拦截并发重复请求，合并在途推演任务；
+   - Ollama 推理采用 2-Worker 并发池与 60s 宽裕超时，彻底解决本地显存积压与排队超时问题。
+4. **SearXNG 双通道自动唤起 (Docker + WSL Daemon)**：
+   - 自动检测并唤醒 WSL Ubuntu 与 Windows Docker 守护进程，无需手动开终端敲命令行启动服务。
+5. **100% 真实数据·零硬编码 (Zero Mock / Hardcoding)**：
+   - 彻底移除了所有静态假数据和 `1000.0` 默认兜底，所有行情、净值、现金均直连 OpenD 实盘端口。
 
 ---
 
@@ -102,25 +93,25 @@ flowchart TD
 
 ### 1. 环境准备
 - **Node.js**: `v18+`
-- **Docker** (用于 SearXNG 本地搜索容器)
-- **Ollama**: 本地运行 `http://127.0.0.1:11434`
+- **Docker** 或 **WSL2** (用于 SearXNG 本地搜索引擎容器)
+- **Ollama**: 本地运行 `http://127.0.0.1:11434`（推荐配置 Qwen 3.8 / Qwen 3.6 / Gemma 4）
 - **MooMoo OpenD**: 本地运行 `127.0.0.1:11111`
 - **Python**: `3.9+` 并安装 `pip install moomoo-api`
 
-### 2. 安装与运行
+### 2. 安装与启动
 
 ```bash
 # 1. 安装根目录及前后端依赖
 npm install
 
-# 2. 初始化 SQLite 数据库 Schema
+# 2. 初始化 SQLite 数据库
 npm run db:push
 
-# 3. 启动开发服务器 (同时拉起后端 3001 与前端 3000)
+# 3. 启动开发服务器 (同时启动后端 3001 与前端 3000)
 npm run dev
 ```
 
-打开浏览器访问：`http://localhost:3000`
+打开浏览器访问：**`http://localhost:3000`**
 
 ---
 
@@ -130,31 +121,17 @@ npm run dev
 StockAgent/
 ├── client/                     # React + Vite + TailwindCSS SPA 前端
 │   ├── src/
-│   │   ├── components/         # Studio 视图、步进器、5-in-1 卡片与同步遮罩
-│   │   └── App.tsx             # 状态驱动与 Studio 路由
+│   │   ├── components/         # Studio 视图、步进器、标的卡片、全景舱弹窗
+│   │   └── App.tsx             # 状态驱动、执行屏障与 Studio 路由
 ├── server/                     # Node.js + Express + Prisma 后端
 │   ├── src/
 │   │   ├── routes/             # RESTful API 路由 (/api/stock/...)
-│   │   ├── services/           # OpenD 适配器、Ollama 服务、SearXNG 搜索、知识图谱
-│   │   └── types/              # 5 大策略分类与阶段类型定义
+│   │   ├── services/           # 量化风控、目标驱动引擎、OpenD 网关、Ollama、SearXNG
+│   │   └── types/              # 5 大策略分类、风控参数与流水线类型定义
 │   └── prisma/                 # SQLite 数据库 Schema
 ├── graft/                      # Graft 自动生成的代码上下文图谱 (Git Ignored)
 ├── .gitignore                  # Git 排除规则
 └── package.json                # 项目依赖与脚本
-```
-
----
-
-## 🗺️ Graft 代码图谱与架构图 (Code Context Graph by Graft)
-
-本项目基于 [NanoNets Graft](https://github.com/NanoNets/Graft) 构建了结构化的代码上下文图谱 (`graft/`)。
-
-```bash
-# 1. 重构/更新本地代码上下文图谱 (更新 graft/ 目录)
-npx @nanonets/graft build
-
-# 2. 输出仓库模块分布与核心 Hub 节点
-npx @nanonets/graft map
 ```
 
 ---

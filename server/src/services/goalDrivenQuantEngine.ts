@@ -67,11 +67,11 @@ export class GoalDrivenQuantEngine {
       return sum + (p.shares > 0 ? p.shares * price : 0);
     }, 0);
 
-    // 2. 用户指定的可动用预算 (若未输入则默认取可用现金，至少 1000)
+    // 2. 用户指定的可动用预算 (若未输入则严格以实盘可用现金为准，零硬编码)
     const effectiveUserInput =
       userInputBudget !== undefined && userInputBudget > 0
         ? userInputBudget
-        : Math.max(actualCash, 1000.0);
+        : actualCash;
 
     // 3. 实际可调用闲置资金 (取输入预算与实盘现金的调和值，允许以输入为准进行推演)
     const availableCashBase = Math.min(effectiveUserInput, actualCash > 0 ? actualCash : effectiveUserInput);
@@ -108,6 +108,68 @@ export class GoalDrivenQuantEngine {
   /**
    * 2. 计算标的 T 日时序波动锥与目标达成概率 P(Hit Goal within T days)
    */
+  /**
+   * 计算标的真实波幅 TR (True Range) 与 14 日等效 ATR
+   * 采用经典工业级算法：TR = max(High - Low, |High - PrevClose|, |Low - PrevClose|)
+   */
+  public calculateATR(params: {
+    currentPrice: number;
+    snapshot?: OpenDSnapshotItem;
+    customAtr?: number;
+  }): {
+    atr: number;
+    atrPct: number;
+  } {
+    const { currentPrice, snapshot, customAtr } = params;
+    const curP = currentPrice > 0 ? currentPrice : 1.0;
+
+    if (customAtr && customAtr > 0) {
+      return {
+        atr: Number(customAtr.toFixed(2)),
+        atrPct: Number(((customAtr / curP) * 100).toFixed(2)),
+      };
+    }
+
+    let tr = curP * 0.025; // 默认 2.5% 基准真实波幅
+
+    if (snapshot) {
+      const high = snapshot.highPrice || curP;
+      const low = snapshot.lowPrice || curP;
+      const prevClose = snapshot.prevClosePrice || curP;
+
+      if (high >= low && high > 0 && low > 0) {
+        const hl = high - low;
+        const hpc = Math.abs(high - prevClose);
+        const lpc = Math.abs(low - prevClose);
+        const dailyTR = Math.max(hl, hpc, lpc);
+
+        if (dailyTR > 0) {
+          tr = dailyTR;
+        }
+      } else if (snapshot.highest52WeeksPrice && snapshot.lowest52WeeksPrice) {
+        // 若缺少当日高低点，以 52 周极值作为备选平滑参考 (除以 14 作为经验尺度)
+        const range52w = snapshot.highest52WeeksPrice - snapshot.lowest52WeeksPrice;
+        tr = Math.max(curP * 0.015, Math.min(curP * 0.08, range52w / 14.0));
+      }
+
+      // 换手率大于 5% 时适度放大波动容差
+      if (snapshot.turnoverRate && snapshot.turnoverRate > 5.0) {
+        tr *= 1.15;
+      }
+    }
+
+    // 限制 ATR 在股价 1.2% ~ 9.5% 的安全统计边界内
+    const boundedATR = Math.max(curP * 0.012, Math.min(curP * 0.095, tr));
+
+    return {
+      atr: Number(boundedATR.toFixed(2)),
+      atrPct: Number(((boundedATR / curP) * 100).toFixed(2)),
+    };
+  }
+
+  /**
+   * 2. 计算标的 T 日时序波动锥与目标达成概率 P(Hit Goal within T days)
+   */
   public calculateGoalAttainment(params: {
     currentPrice: number;
     targetProfitGoalPct: number;      // G% 如 8.0
@@ -117,12 +179,15 @@ export class GoalDrivenQuantEngine {
     spilloverAlpha?: number;          // 知识图谱溢出 Alpha (-50 ~ 50)
     capitalInflowTrend?: string;      // INFLOW / OUTFLOW
     strategyCategory?: StockStrategyCategory;
+    customAtr?: number;
   }): {
     dailyVolatility: number;
     horizonVolatility: number;
     compositeDriftRate: number;
     goalAttainmentProbability: number;
     stopLossSurvivalProbability: number;
+    atr: number;
+    atrPct: number;
   } {
     const {
       currentPrice,
@@ -133,6 +198,7 @@ export class GoalDrivenQuantEngine {
       spilloverAlpha = 0,
       capitalInflowTrend = "NEUTRAL",
       strategyCategory,
+      customAtr,
     } = params;
 
     if (currentPrice <= 0) {
@@ -142,18 +208,14 @@ export class GoalDrivenQuantEngine {
         compositeDriftRate: 0,
         goalAttainmentProbability: 50,
         stopLossSurvivalProbability: 50,
+        atr: 0.5,
+        atrPct: 2.5,
       };
     }
 
-    // 1. 估算标的日波动率 sigma_daily
-    let dailyVol = 0.026; // 默认 2.6%
-    if (snapshot?.highest52WeeksPrice && snapshot?.lowest52WeeksPrice) {
-      const range52w = (snapshot.highest52WeeksPrice - snapshot.lowest52WeeksPrice) / currentPrice;
-      dailyVol = Math.max(0.015, Math.min(0.065, range52w / 16.0));
-    }
-    if (snapshot?.turnoverRate && snapshot.turnoverRate > 5.0) {
-      dailyVol *= 1.25; // 活跃换手波动放大
-    }
+    // 1. 基于真实波幅 ATR 计算标的日波动率 sigma_daily
+    const { atr, atrPct } = this.calculateATR({ currentPrice, snapshot, customAtr });
+    let dailyVol = atrPct / 100;
 
     // T 日波动扩散范围 sigma_T = sigma_daily * sqrt(T)
     const T = Math.max(1, targetTimeHorizonDays);
@@ -203,8 +265,8 @@ export class GoalDrivenQuantEngine {
       Math.min(92.0, Math.max(20.0, rawGoalProb * 100)).toFixed(1)
     );
 
-    // 4. 计算不触及 -4% 止损线的安全存活概率
-    const stopReturnLog = Math.log(1.0 - 0.04);
+    // 4. 计算不触及动态止损线的安全存活概率
+    const stopReturnLog = Math.log(1.0 - Math.max(0.02, dailyVol * 1.8));
     const zStop = (meanT - stopReturnLog) / stdT;
     const rawStopProb = this.stdNormalCDF(zStop);
     const stopLossSurvivalProbability = Number(
@@ -217,6 +279,8 @@ export class GoalDrivenQuantEngine {
       compositeDriftRate: Number((dailyDrift * 100).toFixed(2)),
       goalAttainmentProbability,
       stopLossSurvivalProbability,
+      atr,
+      atrPct,
     };
   }
 
@@ -313,22 +377,24 @@ export class GoalDrivenQuantEngine {
   }
 
   /**
-   * 4. 求解单只标的的具体交易路径与 T 日时间止损纪律
+   * 4. 求解单只标的的具体交易路径与 T 日时间止损纪律 (基于真实 ATR 精确锚定)
    */
   public formulateTradePath(params: {
     symbol: string;
     companyName: string;
     currentPrice: number;
     action: "BUY" | "TRIM" | "HOLD" | "SELL";
-    targetProfitGoalPct: number;      // G% 如 8.0
-    targetTimeHorizonDays: number;    // T 如 5
-    maxDrawdownPct: number;           // D% 如 4.0
-    certaintyScore: number;
-    goalProbability: number;
-    allocatedAmount: number;
-    suggestedShares: number;
+    targetProfitGoalPct?: number;      // G% 如 8.0
+    targetTimeHorizonDays?: number;    // T 如 5
+    maxDrawdownPct?: number;           // D% 如 4.0
+    certaintyScore?: number;
+    goalProbability?: number;
+    allocatedAmount?: number;
+    suggestedShares?: number;
     strategyCategory?: StockStrategyCategory;
     strategyCategoryLabel?: string;
+    snapshot?: OpenDSnapshotItem;
+    customAtr?: number;
   }): {
     entryZone: EntryZone;
     targetPrice: number;
@@ -340,6 +406,9 @@ export class GoalDrivenQuantEngine {
     expectedPnLAmount: number;
     maxRiskAmount: number;
     riskRewardRatio: number;
+    atr: number;
+    atrPct: number;
+    perShareRisk: number;
   } {
     const {
       symbol,
@@ -348,64 +417,77 @@ export class GoalDrivenQuantEngine {
       targetProfitGoalPct = 8.0,
       targetTimeHorizonDays = 5,
       maxDrawdownPct = 4.0,
-      certaintyScore,
-      goalProbability,
-      allocatedAmount,
-      suggestedShares,
+      certaintyScore = 75,
+      goalProbability = 68,
+      allocatedAmount = 0,
+      suggestedShares = 10,
       strategyCategoryLabel,
+      snapshot,
+      customAtr,
     } = params;
 
     const curP = currentPrice > 0 ? currentPrice : 1.0;
 
-    // 1. 买入挂单区间 (杜绝无脑市价追高，设定精准委托区间)
-    const entryMin = Number((curP * 0.992).toFixed(2));
-    const entryMax = Number((curP * 1.006).toFixed(2));
+    // 1. 计算标的 14 日 ATR 真实波幅
+    const { atr: effectiveAtr, atrPct } = this.calculateATR({
+      currentPrice: curP,
+      snapshot,
+      customAtr,
+    });
+
+    // 2. 买入挂单区间 (vn.py 经典回踩均线/支撑位挂单，拒绝市价追高)
+    // 下限：现价下浮 0.35 个 ATR；上限：现价上浮 0.15 个 ATR
+    const entryMin = Number(Math.max(0.01, curP - 0.35 * effectiveAtr).toFixed(2));
+    const entryMax = Number((curP + 0.15 * effectiveAtr).toFixed(2));
     const entryZone: EntryZone = { min: entryMin, max: entryMax };
 
-    // 2. 目标价与止损价测算
-    let targetPrice = Number((curP * (1.0 + targetProfitGoalPct / 100)).toFixed(2));
-    let stopLossPrice = Number((curP * (1.0 - maxDrawdownPct / 100)).toFixed(2));
-    let takeProfitPct = targetProfitGoalPct;
-    let stopLossPct = -maxDrawdownPct;
+    // 3. 动态止损与目标价测算 (基于 ATR 波动率锚定，防洗盘误扫)
+    let stopLossDistance = Math.max(1.8 * effectiveAtr, curP * (maxDrawdownPct / 100));
+    let takeProfitDistance = Math.max(2.5 * effectiveAtr, curP * (targetProfitGoalPct / 100));
+
+    let targetPrice = Number((curP + takeProfitDistance).toFixed(2));
+    let stopLossPrice = Number(Math.max(0.01, curP - stopLossDistance).toFixed(2));
+    let takeProfitPct = Number(((takeProfitDistance / curP) * 100).toFixed(1));
+    let stopLossPct = -Number(((stopLossDistance / curP) * 100).toFixed(1));
 
     if (action === "TRIM" || action === "SELL") {
-      targetPrice = Number((curP * 1.02).toFixed(2));
-      stopLossPrice = Number((curP * 0.98).toFixed(2));
-      takeProfitPct = 2.0;
-      stopLossPct = -2.0;
+      targetPrice = Number((curP + 0.8 * effectiveAtr).toFixed(2));
+      stopLossPrice = Number(Math.max(0.01, curP - 0.8 * effectiveAtr).toFixed(2));
+      takeProfitPct = Number(((0.8 * effectiveAtr / curP) * 100).toFixed(1));
+      stopLossPct = -takeProfitPct;
     } else if (action === "HOLD") {
-      targetPrice = Number((curP * 1.06).toFixed(2));
-      stopLossPrice = Number((curP * 0.95).toFixed(2));
-      takeProfitPct = 6.0;
-      stopLossPct = -5.0;
+      targetPrice = Number((curP + 1.5 * effectiveAtr).toFixed(2));
+      stopLossPrice = Number(Math.max(0.01, curP - 1.5 * effectiveAtr).toFixed(2));
+      takeProfitPct = Number(((1.5 * effectiveAtr / curP) * 100).toFixed(1));
+      stopLossPct = -takeProfitPct;
     }
 
-    const potentialReward = targetPrice - curP;
-    const potentialRisk = curP - stopLossPrice;
-    const riskRewardRatio =
-      potentialRisk > 0 ? Number((potentialReward / potentialRisk).toFixed(2)) : 2.0;
+    const potentialReward = Math.max(0.01, targetPrice - curP);
+    const potentialRisk = Math.max(0.01, curP - stopLossPrice);
+    const riskRewardRatio = Number((potentialReward / potentialRisk).toFixed(2));
+    const perShareRisk = Number(potentialRisk.toFixed(2));
 
-    // 3. 严格 T 日时间止损纪律
+    // 4. 严格 T 日时间止损纪律
     const timeStopRule =
       action === "BUY"
         ? `【时间止损纪律】建仓后持有观察窗口限定为 ${targetTimeHorizonDays} 个交易日。若在第 ${targetTimeHorizonDays} 个交易日收盘前未能有效向上突破或涨幅不足 ${Math.max(2, Math.floor(targetProfitGoalPct * 0.4))}%，执行无条件平仓或重评，消除时间机会成本与资金占用。`
         : action === "TRIM"
         ? `【阶梯止盈纪律】当前分批锁定收益，释放资金回流操盘现金池，剩余底仓以成本线为保本防线。`
-        : `【防守跟踪纪律】保持现有仓位，若 ${targetTimeHorizonDays} 日内跌破支撑位 $${stopLossPrice} 则转为减仓防守。`;
+        : `【防守跟踪纪律】保持现有仓位，若 ${targetTimeHorizonDays} 日内跌破 ATR 支撑位 $${stopLossPrice} 则转为减仓防守。`;
 
-    // 4. 消除迷茫度的核心逻辑提炼
+    // 5. 消除迷茫度的核心逻辑提炼 (明确挂单区间、ATR 与止损逻辑)
     const goalDrivenRationale =
       action === "BUY"
-        ? `[${symbol}] 围绕手头资金分配 $${allocatedAmount.toFixed(0)} (${suggestedShares}股)。在限定 ${targetTimeHorizonDays} 交易日内达成 +${targetProfitGoalPct.toFixed(1)}% 目标的测算概率为 ${goalProbability}% (确定性得分 ${certaintyScore}/100)。分类为 [${strategyCategoryLabel || "精选建仓"}]，以挂单区间 $${entryMin}~$${entryMax} 控制入场成本，下设 $${stopLossPrice} (-${maxDrawdownPct}%) 硬止损。`
+        ? `[${symbol}] 围绕手头资金分配 $${allocatedAmount.toFixed(0)} (${suggestedShares}股)。在限定 ${targetTimeHorizonDays} 交易日内达成 +${targetProfitGoalPct.toFixed(1)}% 目标的测算概率为 ${goalProbability}% (确定性得分 ${certaintyScore}/100)。分类为 [${strategyCategoryLabel || "精选建仓"}]，以 ATR 挂单区间 $${entryMin}~$${entryMax} 控制回踩成本，下设 1.8×ATR 防线 $${stopLossPrice} (${stopLossPct}%) 硬止损。`
         : action === "TRIM"
         ? `[${symbol}] 调仓锁定浮动利润，预计释放回流操盘现金，用于向更高确定性目标转移。`
-        : `[${symbol}] 维持底仓观察，当前波动在预设 ${targetTimeHorizonDays} 日波动锥合理容差范围内。`;
+        : `[${symbol}] 维持底仓观察，当前波动在预设 ${targetTimeHorizonDays} 日 ATR 波动锥 ($${effectiveAtr}/日) 合理容差范围内。`;
 
     const expectedPnLAmount = Number(
       (suggestedShares * (targetPrice - curP)).toFixed(2)
     );
     const maxRiskAmount = Number(
-      (suggestedShares * (curP - stopLossPrice)).toFixed(2)
+      (suggestedShares * potentialRisk).toFixed(2)
     );
 
     return {
@@ -419,12 +501,15 @@ export class GoalDrivenQuantEngine {
       expectedPnLAmount,
       maxRiskAmount,
       riskRewardRatio,
+      atr: effectiveAtr,
+      atrPct,
+      perShareRisk,
     };
   }
 
   /**
    * 5. 组合级资金最优分配求解器 (Constrained Kelly / Risk-Budget Allocation)
-   * 在可用操盘资金空间 C 下，精选确定性最高的 1~3 只标的进行重点头寸分配
+   * 在可用操盘资金空间 C 下，采用单笔 1.5% 账户最大损失风险预算精选头寸
    */
   public optimizePortfolioAllocation(params: {
     candidateActions: ActionItem[];
@@ -487,17 +572,46 @@ export class GoalDrivenQuantEngine {
     };
     const weights = weightProfiles[topPicksCount] || [1.0];
 
+    // 单笔交易最大允许风险敞口 (1.5% 账户净可用资金)
+    const maxSingleRiskBudget = Math.max(15.0, netDeployableCapital * 0.015);
+
     let totalAllocated = 0;
     const finalAllocatedBuyActions: ActionItem[] = [];
 
     topBuyPicks.forEach((act, idx) => {
       const curPrice = act.estimatedPrice > 0 ? act.estimatedPrice : 1.0;
       const allocTarget = netDeployableCapital * weights[idx];
-      let shares = Math.floor(allocTarget / curPrice);
+
+      // 预先求解单股风险与 ATR 交易路径
+      const prePath = this.formulateTradePath({
+        symbol: act.symbol,
+        companyName: act.companyName || act.symbol,
+        currentPrice: curPrice,
+        action: "BUY",
+        targetProfitGoalPct,
+        targetTimeHorizonDays,
+        maxDrawdownPct,
+        certaintyScore: act.certaintyScore || 75,
+        goalProbability: act.goalAttainmentProbability || 68,
+        strategyCategory: act.strategyCategory,
+        strategyCategoryLabel: act.strategyCategoryLabel,
+      });
+
+      // 基于单笔风险预算 (Risk Budget) 与 资金上限 双重约束求解最优股数
+      const perShareRisk = Math.max(0.1, prePath.perShareRisk);
+      const sharesByRisk = Math.floor(maxSingleRiskBudget / perShareRisk);
+      const sharesByCapital = Math.floor(allocTarget / curPrice);
+
+      let shares = Math.min(sharesByCapital, Math.max(1, sharesByRisk));
 
       // 若资金充足但因单价高导致股数为0，若允许则至少买1股
       if (shares <= 0 && netDeployableCapital >= curPrice) {
         shares = 1;
+      }
+
+      // 确保分配资金不突破单票分配上限
+      if (shares * curPrice > allocTarget && shares > 1) {
+        shares = Math.max(1, Math.floor(allocTarget / curPrice));
       }
 
       const actualAlloc = Number((shares * curPrice).toFixed(2));
@@ -538,6 +652,11 @@ export class GoalDrivenQuantEngine {
         goalDrivenRationale: path.goalDrivenRationale,
         expectedPnLAmount: path.expectedPnLAmount,
         maxRiskAmount: path.maxRiskAmount,
+        atr: path.atr,
+        atrPct: path.atrPct,
+        perShareRisk: path.perShareRisk,
+        maxRiskBudget: Number(maxSingleRiskBudget.toFixed(2)),
+        positionWeightPct: Number((weights[idx] * 100).toFixed(1)),
       });
     });
 

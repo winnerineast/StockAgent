@@ -33,6 +33,9 @@ export interface StockClassificationResult {
   goalDrivenRationale: string;
   expectedPnLAmount: number;
   maxRiskAmount: number;
+  atr?: number;
+  atrPct?: number;
+  perShareRisk?: number;
 }
 
 export class StockEngine {
@@ -78,6 +81,7 @@ export class StockEngine {
         allocatedAmount: Number((trimShares * curPrice).toFixed(2)),
         suggestedShares: trimShares,
         strategyCategoryLabel: "👀 止盈防线 · 锁定利润",
+        snapshot,
       });
 
       return {
@@ -102,6 +106,9 @@ export class StockEngine {
         goalDrivenRationale: path.goalDrivenRationale,
         expectedPnLAmount: path.expectedPnLAmount,
         maxRiskAmount: path.maxRiskAmount,
+        atr: path.atr,
+        atrPct: path.atrPct,
+        perShareRisk: path.perShareRisk,
       };
     }
 
@@ -120,6 +127,7 @@ export class StockEngine {
         allocatedAmount: Number((trimShares * curPrice).toFixed(2)),
         suggestedShares: trimShares,
         strategyCategoryLabel: "⚠️ 止损戒备 · 仓位风控",
+        snapshot,
       });
 
       return {
@@ -144,6 +152,9 @@ export class StockEngine {
         goalDrivenRationale: path.goalDrivenRationale,
         expectedPnLAmount: path.expectedPnLAmount,
         maxRiskAmount: path.maxRiskAmount,
+        atr: path.atr,
+        atrPct: path.atrPct,
+        perShareRisk: path.perShareRisk,
       };
     }
 
@@ -223,10 +234,10 @@ export class StockEngine {
       macroRegimeMood,
     });
 
-    // 计算建仓股数与金额
+    // 计算建仓股数与金额 (单笔风险预算对齐)
     const actionType: "BUY" | "HOLD" = category === "WATCH_AND_WAIT" ? "HOLD" : "BUY";
     const buyShares = actionType === "BUY"
-      ? Math.max(1, Math.floor(Math.min(budgetPerStock, 2000) / curPrice))
+      ? Math.max(1, Math.floor((budgetPerStock > 0 ? budgetPerStock : curPrice) / curPrice))
       : sharesHolding;
     const buyAmount = Number((buyShares * curPrice).toFixed(2));
 
@@ -244,6 +255,7 @@ export class StockEngine {
       suggestedShares: buyShares,
       strategyCategory: category,
       strategyCategoryLabel: label,
+      snapshot,
     });
 
     return {
@@ -268,6 +280,9 @@ export class StockEngine {
       goalDrivenRationale: path.goalDrivenRationale,
       expectedPnLAmount: path.expectedPnLAmount,
       maxRiskAmount: path.maxRiskAmount,
+      atr: path.atr,
+      atrPct: path.atrPct,
+      perShareRisk: path.perShareRisk,
     };
   }
 
@@ -279,7 +294,7 @@ export class StockEngine {
     watchlist: Array<{ symbol: string; companyName: string }>,
     quotesMap: Map<string, number>,
     searxngNewsText: string,
-    customBudget: number = 1000.0,
+    customBudget: number = 0,
     riskPreference: string = "BALANCED",
     snapshotsMap?: Map<string, OpenDSnapshotItem>,
     intelsMap?: Map<string, SingleStockIntel>,

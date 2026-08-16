@@ -377,10 +377,10 @@ def run_macro_sectors():
     uup_snap = snapshots_map.get('US.UUP', {})
 
     cross_asset = {
-        'vix': uvxy_snap.get('lastPrice', 15.2),
-        'vixChange': uvxy_snap.get('changeRate', -0.3),
-        'us10y': round(4.35 - (tlt_snap.get('changeRate', 0.0) * 0.1), 2),
-        'dxy': round(103.5 + (uup_snap.get('changeRate', 0.0) * 0.5), 1),
+        'vix': float(uvxy_snap.get('lastPrice', 0.0) or 0.0),
+        'vixChange': float(uvxy_snap.get('changeRate', 0.0) or 0.0),
+        'us10y': float(tlt_snap.get('lastPrice', 0.0) or 0.0),
+        'dxy': float(uup_snap.get('lastPrice', 0.0) or 0.0),
         'spyChange': spy_change,
         'qqqChange': qqq_change,
         'iwmChange': iwm_change,

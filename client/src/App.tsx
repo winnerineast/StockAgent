@@ -62,6 +62,19 @@ export default function App() {
     } catch (e) {}
   };
 
+  const hasTriggeredInitialStrategyRef = useRef<boolean>(false);
+  const statusesRef = useRef<{
+    openD: boolean;
+    searxng: boolean;
+    ollama: boolean;
+    isUnlocked: boolean;
+  }>({
+    openD: false,
+    searxng: false,
+    ollama: false,
+    isUnlocked: false,
+  });
+
   // Check statuses and fetch initial portfolio
   const fetchStatus = async () => {
     try {
@@ -74,9 +87,19 @@ export default function App() {
         prevOpenDConnectedRef.current = isNowConnected;
 
         setOpenDConnected(isNowConnected);
-        setSearxngConnected(json.data.searxng.connected);
+        setSearxngConnected(!!json.data.searxng.connected);
         setOllamaStatus(json.data.ollama || { connected: false, models: [], recommendedModel: "" });
-        setIsUnlocked(json.data.isUnlocked);
+        setIsUnlocked(!!json.data.isUnlocked);
+
+        const isOllamaOk = !!json.data.ollama?.connected && Array.isArray(json.data.ollama?.models) && json.data.ollama.models.length > 0;
+        const isAllReady = isNowConnected && !!json.data.searxng.connected && isOllamaOk && !!json.data.isUnlocked;
+
+        statusesRef.current = {
+          openD: isNowConnected,
+          searxng: !!json.data.searxng.connected,
+          ollama: isOllamaOk,
+          isUnlocked: !!json.data.isUnlocked,
+        };
 
         if (json.data.ollama && json.data.ollama.models.length > 0) {
           const recModel = json.data.ollama.recommendedModel || json.data.ollama.models[0];
@@ -93,6 +116,13 @@ export default function App() {
           console.log("[SPA] MooMoo OpenD 已连通，自动拉取最新实盘持仓与自选股...");
           fetchPortfolio();
           fetchWatchlist();
+        }
+
+        // 🌟 纯执行顺序控制：当且仅当 OpenD、SearXNG、Ollama 与 交易解锁 全部就绪时，才启动 Step 1
+        if (isAllReady && !hasTriggeredInitialStrategyRef.current) {
+          hasTriggeredInitialStrategyRef.current = true;
+          console.log("[SPA] 4 大核心环境就绪，正式启动 Step 1 推演流水线...");
+          handleGenerateStrategy(undefined, undefined, true);
         }
       }
     } catch (e) {}
@@ -218,7 +248,24 @@ export default function App() {
     } catch (e) {}
   };
 
-  const handleGenerateStrategy = async (overrideBudget?: number, overrideModel?: string) => {
+  const isGeneratingRef = useRef<boolean>(false);
+
+  const handleGenerateStrategy = async (overrideBudget?: number, overrideModel?: string, forceStart: boolean = false) => {
+    if (isGeneratingRef.current) {
+      console.log("[StockAgent] 策略推演流水线正在执行中，忽略重复触发。");
+      return;
+    }
+
+    // 🌟 严格执行顺序强逻辑：OpenD, SearXNG, 本地大模型, 交易解锁 全部就绪后方才开始 Step 1
+    if (!forceStart) {
+      const cur = statusesRef.current;
+      if (!cur.openD || !cur.searxng || !cur.ollama || !cur.isUnlocked) {
+        console.log("[StockAgent] 执行顺序阻塞生效：OpenD / SearXNG / Ollama / 交易解锁 未全部就绪，暂不启动 Step 1。", cur);
+        return;
+      }
+    }
+
+    isGeneratingRef.current = true;
     setLoading(true);
     const modelUsed = overrideModel || selectedOllamaModel || ollamaStatus.recommendedModel || "Ollama";
 
@@ -308,6 +355,7 @@ export default function App() {
       console.warn("Failed to generate strategy:", e);
     } finally {
       clearInterval(stagePollInterval);
+      isGeneratingRef.current = false;
       setLoading(false);
     }
   };
@@ -368,7 +416,6 @@ export default function App() {
     fetchWatchlist();
     fetchRetrospectives();
     fetchStrategyHistory();
-    handleGenerateStrategy();
 
     // 3 秒定时轻量轮询连通状态与时态 (MooMoo OpenD, SearXNG, Ollama)
     const statusInterval = setInterval(() => {
@@ -439,6 +486,12 @@ export default function App() {
           onOpenKnowledgeGraph={handleOpenKnowledgeGraph}
           onOpenUnlockModal={() => setUnlockModalOpen(true)}
           onExecuteRebalance={handleExecuteRebalance}
+          openDConnected={openDConnected}
+          searxngConnected={searxngConnected}
+          ollamaStatus={ollamaStatus}
+          selectedOllamaModel={selectedOllamaModel}
+          onRefreshStatus={fetchStatus}
+          onStartDeduction={() => handleGenerateStrategy()}
           marketSession={marketSession}
         />
       </main>
