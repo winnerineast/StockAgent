@@ -9,6 +9,7 @@ import { ollamaService } from "./ollamaService";
 import { goalDrivenQuantEngine } from "./goalDrivenQuantEngine";
 import { computeTotalPnL, computeRetroPnL, savePortfolioSnapshot } from "./stockMemoryManager";
 import { deductionVerificationService } from "./deductionVerificationService";
+import { marketCalendarService } from "./marketCalendarService";
 import {
   DailyAllocationOutput,
   StockPositionItem,
@@ -21,6 +22,8 @@ import {
   DeductionPipelineData,
   CapitalSpaceAnalysis,
   GoalDrivenConstraint,
+  MarketSessionPhase,
+  MarketSessionContext,
 } from "../types/stockTypes";
 
 export class DailyStrategyDirector {
@@ -43,7 +46,9 @@ export class DailyStrategyDirector {
     onProgress?: (stage: StrategyProgressStage) => void,
     targetProfitGoalPct: number = 8.0,
     targetTimeHorizonDays: number = 5,
-    maxDrawdownPct: number = 4.0
+    maxDrawdownPct: number = 4.0,
+    simulatedTime?: Date | string | number,
+    marketPhaseOverride?: MarketSessionPhase
   ): Promise<{
     strategyId: string;
     strategyDate: string;
@@ -160,8 +165,11 @@ export class DailyStrategyDirector {
       watchlistItems,
     };
 
+    // 🌟 计算并锚定美股时空时态 (支持真实时间与模拟时间注入)
+    const marketSession = marketCalendarService.getMarketSession(simulatedTime, marketPhaseOverride);
+
     // STEP 2: Phase 1 动态拉取 OpenD 11 大行业板块资金流，并执行 SearXNG 权威信源分级搜刮 (MACRO_SEARCH)
-    notifyStage(2, "MACRO_SEARCH", "MooMoo OpenD 11大行业板块与资金流", "正在拉取半导体/科技/金融/能源等 11 大行业 ETF 实时行情与资金流...", 30);
+    notifyStage(2, "MACRO_SEARCH", "MooMoo OpenD 11大行业板块与资金流", `[${marketSession.phaseLabel}] 正在拉取 11 大行业 ETF 实时行情与资金流...`, 30);
     const openDSectorsData = await moomooAdapter.fetchMacroSectorsFromOpenD();
 
     // 实时流式注入已就绪的板块数据
@@ -170,8 +178,8 @@ export class DailyStrategyDirector {
       openDSectorsData,
     };
 
-    notifyStage(2, "MACRO_SEARCH", "SearXNG 权威财经通讯社分级搜刮", "正在从 Bloomberg/Reuters/WSJ 检索 Tier-1 权威资讯与政策预期差...", 40);
-    const macroRes = await searxngSearchService.searchMacroAndSectorNews(openDSectorsData);
+    notifyStage(2, "MACRO_SEARCH", "SearXNG 权威财经通讯社分级搜刮", `[${marketSession.phaseLabel}] 正在依据时态从 Bloomberg/Reuters/WSJ 检索最新资讯...`, 40);
+    const macroRes = await searxngSearchService.searchMacroAndSectorNews(openDSectorsData, marketSession.marketPhase);
 
     // 异步高密度落库快照 (L2 存储)
     if (macroRes.macroIntel.macroSnapshot) {
@@ -351,7 +359,7 @@ export class DailyStrategyDirector {
       const pos = currentPositions.find((p) => p.symbol.toUpperCase() === sym);
       const companyName = cand.companyName;
 
-      const intel = await searxngSearchService.searchSingleStockIntel(sym, companyName);
+      const intel = await searxngSearchService.searchSingleStockIntel(sym, companyName, marketSession.marketPhase);
       candidateStockIntels.set(sym, intel);
 
       let kgItem = await stockKnowledgeGraphStoreService.getKnowledgeGraph(portfolioId, sym);
@@ -702,6 +710,7 @@ export class DailyStrategyDirector {
         marketOverview: screenerRes.marketOverview,
         macroIntel: macroRes.macroIntel,
         macroSnapshot: macroRes.macroIntel.macroSnapshot,
+        marketSession,
         capitalSpace: updatedCapitalSpace,
         goalConstraints,
         overallCertaintyScore,
@@ -712,7 +721,7 @@ export class DailyStrategyDirector {
         riskAlerts: screenerRes.riskAlerts,
         knowledgeGraph: knowledgeGraphList,
         perStockDeductionRetro: perStockDeductionRetroList,
-        narrativeReport: `### 操盘分析报告 (${todayStr})\n\n${macroRes.macroIntel.summaryHeadline}\n\n**宏观策略基调**: ${macroRes.macroIntel.macroTradingStance.bias}\n**仓位调控建议**: ${macroRes.macroIntel.macroTradingStance.positionStrategy}\n**风控预警防线**: ${macroRes.macroIntel.macroTradingStance.riskWarning}\n**资金空间与确定性**: 可用操盘空间 $${updatedCapitalSpace.totalDeployableCapacity}，组合目标达成期望概率 ${overallGoalProbability}% (确定性得分 ${overallCertaintyScore}/100)`,
+        narrativeReport: `### 操盘分析报告 (${todayStr} | ${marketSession.phaseLabel})\n\n${macroRes.macroIntel.summaryHeadline}\n\n**美东时态定位**: ${marketSession.easternTimeStr} (${marketSession.countdownLabel})\n**大模型担当角色**: ${marketSession.activeRoleName}\n**宏观策略基调**: ${macroRes.macroIntel.macroTradingStance.bias}\n**仓位调控建议**: ${macroRes.macroIntel.macroTradingStance.positionStrategy}\n**风控预警防线**: ${macroRes.macroIntel.macroTradingStance.riskWarning}\n**资金空间与确定性**: 可用操盘空间 $${updatedCapitalSpace.totalDeployableCapacity}，组合目标达成期望概率 ${overallGoalProbability}% (确定性得分 ${overallCertaintyScore}/100)`,
       },
       retroPnL,
     };

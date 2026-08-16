@@ -54,7 +54,7 @@ export function parseMacroIntel(raw?: string): MacroMarketIntel {
     return {
       sentimentMood: "NEUTRAL",
       sentimentScore: 50,
-      summaryHeadline: "全网盘前资讯暂未检索到显著异常，大盘维持平稳震荡动向。",
+      summaryHeadline: "全网最新时态资讯检索就绪，大盘维持基准平稳震荡动向。",
       starSectors: ["大盘科技成长", "AI 算力与半导体", "宏观防御性消费"],
       keyBulletPoints: [],
       macroTradingStance: {
@@ -83,7 +83,7 @@ export function parseMacroIntel(raw?: string): MacroMarketIntel {
     starSectors: ["科技与半导体", "AI 算力与电力", "宏观利率与消费"],
     keyBulletPoints: [
       {
-        title: "美股大盘全网盘前资讯摘要",
+        title: "美股大盘全网最新资讯摘要",
         snippet: raw.slice(0, 260),
         source: "SearXNG 聚合检索",
       }
@@ -117,6 +117,20 @@ interface DeductionRetroStudioTabProps {
   onOpenKnowledgeGraph: (symbol: string) => void;
   onOpenUnlockModal: () => void;
   onExecuteRebalance: (budget: number, risk: string) => void;
+  marketSession?: {
+    easternTimeStr: string;
+    localTimeStr: string;
+    isTradingDay: boolean;
+    marketPhase: string;
+    phaseLabel: string;
+    phaseDescription: string;
+    activeRoleName: string;
+    timeToNextBellMinutes: number;
+    countdownLabel: string;
+    currentTradingDay: string;
+    nextTradingDay: string;
+    isSimulated?: boolean;
+  } | null;
 }
 
 // 统一的阶段阻塞同步遮罩与虚化指示器
@@ -191,6 +205,7 @@ export const DeductionRetroStudioTab: React.FC<DeductionRetroStudioTabProps> = (
   onOpenKnowledgeGraph,
   onOpenUnlockModal,
   onExecuteRebalance,
+  marketSession,
 }) => {
   const [customBudget, setCustomBudget] = useState<number>(1000);
   const [riskPreference, setRiskPreference] = useState<string>("BALANCED");
@@ -385,6 +400,49 @@ export const DeductionRetroStudioTab: React.FC<DeductionRetroStudioTabProps> = (
         currentStage={currentStage}
         loading={loading}
       />
+
+      {/* 🌟 美股交易时态与大模型使命战略横幅 */}
+      {marketSession && (
+        <div className={`p-4 rounded-2xl border flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-lg transition-all ${
+          marketSession.marketPhase === "PRE_MARKET"
+            ? "bg-gradient-to-r from-amber-950/40 via-slate-900 to-amber-950/20 border-amber-500/30"
+            : marketSession.marketPhase === "INTRADAY"
+            ? "bg-gradient-to-r from-emerald-950/40 via-slate-900 to-emerald-950/20 border-emerald-500/30"
+            : marketSession.marketPhase === "POST_MARKET"
+            ? "bg-gradient-to-r from-indigo-950/40 via-slate-900 to-indigo-950/20 border-indigo-500/30"
+            : "bg-slate-900/90 border-slate-800"
+        }`}>
+          <div className="flex items-start gap-3">
+            <div className="p-2 rounded-xl bg-slate-950/80 border border-slate-800 shrink-0 mt-0.5 shadow-inner">
+              <Compass className="w-5 h-5 text-cyan-400" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-bold text-sm text-white">{marketSession.phaseLabel}</span>
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-cyan-500/10 text-cyan-300 border border-cyan-500/30">
+                  AI角色: {marketSession.activeRoleName}
+                </span>
+                {marketSession.isSimulated && (
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
+                    ⚡ 时空穿梭模拟模式
+                  </span>
+                )}
+                <span className="text-xs text-slate-400 font-mono hidden sm:inline">
+                  • {marketSession.countdownLabel}
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                {marketSession.phaseDescription}
+              </p>
+            </div>
+          </div>
+
+          <div className="shrink-0 flex items-center gap-2 text-xs font-mono bg-slate-950/80 px-3.5 py-1.5 rounded-xl border border-slate-800 text-slate-300 self-end md:self-auto">
+            <span className="text-slate-400">美东时间:</span>
+            <span className="text-cyan-300 font-bold">{marketSession.easternTimeStr}</span>
+          </div>
+        </div>
+      )}
 
       {/* ========================================================================= */}
       {/* 🚀 STEP 1: MooMoo OpenD 实盘持仓、资产净值与自选股连通 */}

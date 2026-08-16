@@ -6,6 +6,7 @@ import { ollamaService } from "../services/ollamaService";
 import { dailyStrategyDirector } from "../services/dailyStrategyDirector";
 import { stockKnowledgeGraphStoreService } from "../services/stockKnowledgeGraphStore";
 import { macroSnapshotStoreService } from "../services/macroSnapshotStore";
+import { marketCalendarService } from "../services/marketCalendarService";
 import { prisma } from "../db/prisma";
 
 export const stockRouter = Router();
@@ -189,7 +190,20 @@ stockRouter.get("/strategy/stage", (_req: Request, res: Response) => {
   });
 });
 
-// 5.5 调用 Ollama 模型 / 规则引擎生成开盘调仓指南与复盘经验
+// 5.2 获取美股交易日历、实时美东时态与开闭盘倒计时
+stockRouter.get("/market-session", (req: Request, res: Response) => {
+  const { simulatedTime, marketPhaseOverride } = req.query;
+  const session = marketCalendarService.getMarketSession(
+    simulatedTime ? (simulatedTime as string) : undefined,
+    marketPhaseOverride ? (marketPhaseOverride as any) : undefined
+  );
+  return res.json({
+    success: true,
+    data: session,
+  });
+});
+
+// 5.5 调用 Ollama 模型 / 规则引擎生成开盘调仓指南与复盘经验 (支持目标驱动与时态锚定)
 stockRouter.post("/strategy/generate", async (req: Request, res: Response) => {
   const {
     customBudget,
@@ -197,6 +211,8 @@ stockRouter.post("/strategy/generate", async (req: Request, res: Response) => {
     targetProfitGoalPct,
     targetTimeHorizonDays,
     maxDrawdownPct,
+    simulatedTime,
+    marketPhaseOverride,
   } = req.body;
   try {
     const result = await dailyStrategyDirector.generateDailyStrategy(
@@ -206,7 +222,9 @@ stockRouter.post("/strategy/generate", async (req: Request, res: Response) => {
       undefined,
       targetProfitGoalPct !== undefined ? Number(targetProfitGoalPct) : 8.0,
       targetTimeHorizonDays !== undefined ? Number(targetTimeHorizonDays) : 5,
-      maxDrawdownPct !== undefined ? Number(maxDrawdownPct) : 4.0
+      maxDrawdownPct !== undefined ? Number(maxDrawdownPct) : 4.0,
+      simulatedTime,
+      marketPhaseOverride
     );
     return res.json({ success: true, data: result });
   } catch (err: any) {

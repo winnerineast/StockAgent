@@ -54,9 +54,9 @@ export const OllamaDeductionModal: React.FC<OllamaDeductionModalProps> = ({
     ? selectedHistory.deductionPipeline
     : (pipelineData || {
         modelUsed: "Ollama",
-        promptContextText: "// 等待触发开盘推演... 点击【生成/刷新盘前推演】发起 Map-Reduce 分段推理与 Context 搜刮",
+        promptContextText: "// 等待触发推演... 点击【启动全时态策略推演】发起 Map-Reduce 分段推理与 Context 搜刮",
         knowledgeGraphContext: "// 暂无图谱 Context 节点数据",
-        searxngNewsContext: "// 暂无 SearXNG 盘前新闻数据",
+        searxngNewsContext: "// 暂无 SearXNG 资讯数据",
         positionsContext: "// 暂无实盘持仓与资金明细",
         lessonsContext: "// 暂无历史风控教训记录",
         rawOllamaOutput: "// 暂无 Ollama 原始生成 JSON 输出",
@@ -75,7 +75,7 @@ export const OllamaDeductionModal: React.FC<OllamaDeductionModalProps> = ({
       case "kg":
         return activeData.knowledgeGraphContext || "// 暂无单股票知识图谱 Context 节点数据";
       case "news":
-        return activeData.searxngNewsContext || "// 暂无 SearXNG 盘前新闻资讯数据";
+        return activeData.searxngNewsContext || "// 暂无 SearXNG 资讯数据";
       case "positions":
         return activeData.positionsContext || "// 暂无实盘持仓与预算数据";
       case "output":

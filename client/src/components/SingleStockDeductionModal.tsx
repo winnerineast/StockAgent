@@ -802,7 +802,7 @@ export const SingleStockDeductionModal: React.FC<SingleStockDeductionModalProps>
                     </ul>
                   ) : (
                     <div className="text-slate-400 italic p-3 bg-slate-950 rounded-lg border border-slate-800">
-                      启动推演后将自动调用 SearXNG 抓取权威盘前消歧重磅资讯。
+                      启动推演后将自动调用 SearXNG 抓取权威时态消歧重磅资讯。
                     </div>
                   )}
                 </div>

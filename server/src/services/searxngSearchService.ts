@@ -1,6 +1,7 @@
 import { execSync } from "child_process";
 import { prisma } from "../db/prisma";
-import { SingleStockIntel, CommunitySentimentItem, CapitalFlowItem, MacroMarketIntel } from "../types/stockTypes";
+import { SingleStockIntel, CommunitySentimentItem, CapitalFlowItem, MacroMarketIntel, MarketSessionPhase } from "../types/stockTypes";
+import { marketCalendarService } from "./marketCalendarService";
 
 export interface SearXNGSearchResultItem {
   title: string;
@@ -137,25 +138,70 @@ export class SearXNGSearchService {
   }
 
   /**
-   * 动态生成包含多义词消歧与限定词结合的搜刮 Query
+   * 动态生成包含多义词消歧与限定词结合的搜刮 Query (兼容原接口)
    */
   public buildDisambiguatedQuery(
     symbol: string,
     companyName?: string,
     searchType: "news" | "sentiment" | "capitalFlow" = "news"
   ): string {
+    return this.buildTimeAnchoredQuery(symbol, companyName, undefined, searchType);
+  }
+
+  /**
+   * 🌟 核心升级：美股交易时态定向 Query 生成器
+   * 依据当前时态 (PRE_MARKET / INTRADAY / POST_MARKET / WEEKEND) 注入精准时效限定词
+   */
+  public buildTimeAnchoredQuery(
+    symbol: string,
+    companyName?: string,
+    phase?: MarketSessionPhase,
+    searchType: "news" | "sentiment" | "capitalFlow" = "news"
+  ): string {
+    const currentPhase = phase || marketCalendarService.getMarketSession().marketPhase;
     const symUpper = symbol.toUpperCase().trim();
     const cleanCompanyName = companyName && companyName !== symUpper ? companyName.trim() : "";
     const namePart = cleanCompanyName ? `"${cleanCompanyName}"` : "";
 
-    if (searchType === "news") {
-      return `"${symUpper}" ${namePart} stock financial news quarterly earnings analyst rating`.trim();
-    } else if (searchType === "sentiment") {
-      return `"${symUpper}" ${namePart} stock reddit stocktwits seekingalpha sentiment discussion`.trim();
+    if (currentPhase === "PRE_MARKET") {
+      // 盘前分析：聚焦隔夜期指、盘前财报、跳空缺口
+      if (searchType === "news") {
+        return `"${symUpper}" ${namePart} stock pre-market news overnight futures earnings before bell`.trim();
+      } else if (searchType === "sentiment") {
+        return `"${symUpper}" ${namePart} pre-market retail sentiment gap up gap down stocktwits`.trim();
+      } else {
+        return `"${symUpper}" ${namePart} pre-market block trade dark pool volume institutional`.trim();
+      }
+    } else if (currentPhase === "INTRADAY") {
+      // 盘中监控：聚焦突发快讯、盘中异动放量、分时走势
+      if (searchType === "news") {
+        return `"${symUpper}" ${namePart} stock breaking news today intraday unusual volume live update`.trim();
+      } else if (searchType === "sentiment") {
+        return `"${symUpper}" ${namePart} stock live trading discussion reddit stocktwits intraday`.trim();
+      } else {
+        return `"${symUpper}" ${namePart} stock institutional intraday flow big money dark pool`.trim();
+      }
+    } else if (currentPhase === "POST_MARKET") {
+      // 盘后复盘：聚焦收盘全景、盘后财报与电话会、盘后结算
+      if (searchType === "news") {
+        return `"${symUpper}" ${namePart} stock post-market earnings call results closing market wrap after hours`.trim();
+      } else if (searchType === "sentiment") {
+        return `"${symUpper}" ${namePart} post-market earnings reaction stocktwits retail sentiment`.trim();
+      } else {
+        return `"${symUpper}" ${namePart} stock closing auction block trade dark pool after hours`.trim();
+      }
     } else {
-      return `"${symUpper}" ${namePart} stock institutional buying big money capital flow dark pool`.trim();
+      // 周末/休市：聚焦周度展望、机构持仓变动、深度研报
+      if (searchType === "news") {
+        return `"${symUpper}" ${namePart} stock weekly market outlook forecast Wall Street analyst rating`.trim();
+      } else if (searchType === "sentiment") {
+        return `"${symUpper}" ${namePart} weekend stock discussion sentiment seekingalpha analysis`.trim();
+      } else {
+        return `"${symUpper}" ${namePart} stock weekly institutional positioning 13F filing capital flow`.trim();
+      }
     }
   }
+
 
   /**
    * 信源可靠性分级引擎 (Source Credibility Classifier)
@@ -405,7 +451,7 @@ export class SearXNGSearchService {
   }
 
   /**
-   * Phase 1: 搜刮整体大盘走向、趋势、热门板块与主流财经媒体资讯 (集成 OpenD 真实板块数据)
+   * Phase 1: 搜刮整体大盘走向、趋势、热门板块与主流财经媒体资讯 (集成 OpenD 真实板块数据与时态定向)
    */
   public async searchMacroAndSectorNews(
     openDSectorsData?: {
@@ -417,7 +463,8 @@ export class SearXNGSearchService {
       sectors?: any[];
       leadingSectors?: string[];
       laggingSectors?: string[];
-    }
+    },
+    phase?: MarketSessionPhase
   ): Promise<{
     macroOverview: string;
     macroIntel: MacroMarketIntel;
@@ -440,11 +487,39 @@ export class SearXNGSearchService {
     }
 
     const todayStr = new Date().toISOString().split("T")[0];
-    const queries = [
+    const currentPhase = phase || marketCalendarService.getMarketSession().marketPhase;
+
+    let queries = [
       "site:reuters.com OR site:cnbc.com OR site:bloomberg.com OR site:wsj.com US stock market trend macro",
       "site:marketwatch.com OR site:barrons.com US stock market sector rotation top gainers today",
       "site:reuters.com OR site:cnbc.com Fed interest rate inflation treasury yield market impact",
     ];
+
+    if (currentPhase === "PRE_MARKET") {
+      queries = [
+        "site:reuters.com OR site:cnbc.com OR site:bloomberg.com US stock futures premarket overnight inflation macro",
+        "site:marketwatch.com OR site:barrons.com US market movers premarket earnings before open today",
+        "site:reuters.com OR site:cnbc.com Fed interest rate treasury yields bond market premarket",
+      ];
+    } else if (currentPhase === "INTRADAY") {
+      queries = [
+        "site:reuters.com OR site:cnbc.com OR site:bloomberg.com US stock market live intraday rally drop",
+        "site:marketwatch.com OR site:barrons.com US market sector movers leading lagging intraday",
+        "site:cnbc.com OR site:reuters.com Wall street live breaking news today market alert",
+      ];
+    } else if (currentPhase === "POST_MARKET") {
+      queries = [
+        "site:reuters.com OR site:cnbc.com OR site:bloomberg.com US stock market closing bell recap daily wrap",
+        "site:marketwatch.com OR site:barrons.com after hours earnings reports conference calls results",
+        "site:wsj.com OR site:bloomberg.com Wall Street market close summary top sectors",
+      ];
+    } else if (currentPhase === "WEEKEND_OR_HOLIDAY") {
+      queries = [
+        "site:reuters.com OR site:bloomberg.com OR site:wsj.com US stock market weekly outlook forecast macro",
+        "site:barrons.com OR site:marketwatch.com Wall Street week ahead sector rotation analyst preview",
+        "site:bloomberg.com OR site:ft.com global liquidity central banks Fed interest rate policy outlook",
+      ];
+    }
 
     const fetchedItems: Array<{ title: string; summary: string; url: string }> = [];
 
@@ -489,11 +564,12 @@ export class SearXNGSearchService {
   }
 
   /**
-   * Phase 2: 针对候选股票池中的单只股票进行 3 维独立深度搜刮 (新闻 + 社区情绪 + 大资金动向)
+   * Phase 2: 针对候选股票池中的单只股票进行 3 维独立深度搜刮 (新闻 + 社区情绪 + 大资金动向，支持时态定向)
    */
   public async searchSingleStockIntel(
     symbol: string,
-    companyName?: string
+    companyName?: string,
+    phase?: MarketSessionPhase
   ): Promise<SingleStockIntel> {
     const symUpper = symbol.toUpperCase().trim();
     const status = await this.getStatus(false);
@@ -508,9 +584,9 @@ export class SearXNGSearchService {
       };
     }
 
-    const newsQuery = this.buildDisambiguatedQuery(symUpper, companyName, "news");
-    const sentimentQuery = this.buildDisambiguatedQuery(symUpper, companyName, "sentiment");
-    const capitalFlowQuery = this.buildDisambiguatedQuery(symUpper, companyName, "capitalFlow");
+    const newsQuery = this.buildTimeAnchoredQuery(symUpper, companyName, phase, "news");
+    const sentimentQuery = this.buildTimeAnchoredQuery(symUpper, companyName, phase, "sentiment");
+    const capitalFlowQuery = this.buildTimeAnchoredQuery(symUpper, companyName, phase, "capitalFlow");
 
     const [newsRes, sentimentRes, capitalFlowRes] = await Promise.all([
       this.searchStockNews(newsQuery, 3),

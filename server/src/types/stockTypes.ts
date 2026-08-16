@@ -385,10 +385,40 @@ export interface GoalDrivenConstraint {
   userDeployableBudget: number;        // 用户预算 C ($)
 }
 
+export type MarketSessionPhase =
+  | "PRE_MARKET"         // 盘前分析推演期 (04:00 - 09:30 ET)
+  | "INTRADAY"           // 盘中实时监控期 (09:30 - 16:00 ET)
+  | "POST_MARKET"        // 盘后复盘归 Interpretation期 (16:00 - 20:00 ET)
+  | "OVERNIGHT_CLOSED"   // 夜间休市静默期 (20:00 - 04:00 ET)
+  | "WEEKEND_OR_HOLIDAY"; // 周末或 NYSE/NASDAQ 官方节假日休市
+
+export type TimeTravelSimulationMode =
+  | "REALTIME"           // 实时跟随真实物理时钟
+  | "SIMULATE_PRE_MARKET" // 强制模拟盘前 (08:30 ET)
+  | "SIMULATE_INTRADAY"  // 强制模拟盘中 (14:00 ET)
+  | "SIMULATE_POST_MARKET"// 强制模拟盘后 (17:30 ET)
+  | "SIMULATE_WEEKEND";  // 强制模拟周末研判
+
+export interface MarketSessionContext {
+  easternTimeStr: string;        // 美东时间字符串 (如 "2026-08-17 08:30:00 EDT")
+  localTimeStr: string;          // 本地时间字符串
+  isTradingDay: boolean;         // 今日是否为美股交易日
+  marketPhase: MarketSessionPhase;
+  phaseLabel: string;            // 人类可读标签 (如 "🟡 盘前推演期")
+  phaseDescription: string;      // 时态核心指引 (如 "聚焦隔夜宏观、盘前跳空与开盘挂单预案")
+  activeRoleName: string;        // 大模型当前担当角色 (如 "盘前首席策略官")
+  timeToNextBellMinutes: number; // 距离下一次重要开闭盘关键时刻的分钟数
+  countdownLabel: string;        // 倒计时提示 (如 "距离美股开盘还有 60 分钟")
+  currentTradingDay: string;     // 当前或最近美股交易日 (YYYY-MM-DD)
+  nextTradingDay: string;        // 下一个美股交易日 (YYYY-MM-DD)
+  isSimulated?: boolean;         // 是否处于时空穿梭模拟模式
+}
+
 export interface DailyAllocationOutput {
   marketOverview: string;
   macroIntel?: MacroMarketIntel;
   macroSnapshot?: DailyMacroSnapshotDTO;
+  marketSession?: MarketSessionContext; // 美股时空时态锚定上下文
   capitalSpace?: CapitalSpaceAnalysis;
   goalConstraints?: GoalDrivenConstraint;
   overallCertaintyScore?: number;      // 全局消除迷茫度得分 (0~100)
@@ -403,3 +433,4 @@ export interface DailyAllocationOutput {
   recentlyClearedPositions?: StockPositionItem[];
   narrativeReport: string;
 }
+

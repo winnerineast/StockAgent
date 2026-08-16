@@ -9,9 +9,11 @@ import {
   StockFundamentals,
   StockStrategyCategory,
   TimeFmForecastItem,
+  MarketSessionContext,
 } from "../types/stockTypes";
 import { graphQuantitativeEngine } from "./graphQuantitativeEngine";
 import { quantRiskManager } from "./quantRiskManager";
+import { marketCalendarService } from "./marketCalendarService";
 
 export interface HardwareInfo {
   totalRamGb: number;
@@ -319,6 +321,7 @@ ${searxngNewsText || "暂无最新全球宏观突发新闻"}
       targetTimeHorizonDays?: number;
       maxDrawdownPct?: number;
       userBudget?: number;
+      marketSession?: MarketSessionContext;
     }
   ): Promise<ActionItem | null> {
     const s = stockData.symbol;
@@ -340,6 +343,9 @@ ${searxngNewsText || "暂无最新全球宏观突发新闻"}
     const targetG = stockData.targetProfitGoalPct || 8.0;
     const maxD = stockData.maxDrawdownPct || 4.0;
     const userBudget = stockData.userBudget || 2000.0;
+
+    const session = stockData.marketSession || marketCalendarService.getMarketSession();
+    const sessionPromptText = marketCalendarService.formatSessionPromptContext(session);
 
     const posInfoText = pos && pos.shares > 0
       ? `目前持仓 ${pos.shares} 股，成本价 $${pos.costBasis.toFixed(2)}，浮动盈亏 ${(((curP - pos.costBasis) / pos.costBasis) * 100).toFixed(1)}%`
@@ -365,6 +371,8 @@ ${searxngNewsText || "暂无最新全球宏观突发新闻"}
     const prompt = `分析美股标的 [${s}] (${cName}) 的全要素数据。
 我们计算的目的不是为了处理海量信息而堆砌信息，而是消除迷茫的程度，在严格成本与时间限制下，把走势确定性算准。
 
+${sessionPromptText}
+
 【用户刚性目标与资金约束】:
 - 手头可调用资金空间: $${userBudget.toFixed(0)}
 - 限定交易日时间跨度: ${targetT} 个交易日
@@ -386,7 +394,7 @@ ${tfmText}
 【基本面财报】:
 ${fundText}
 
-【盘前新闻与催化】:
+【${session.marketPhase === "PRE_MARKET" ? "盘前新闻与催化" : session.marketPhase === "INTRADAY" ? "盘中实时突发快讯" : "最新新闻资讯"}】:
 ${newsText}
 
 【主力/机构大资金走向】:
@@ -402,7 +410,7 @@ ${verifiedMemories}
   "action": "BUY" | "TRIM" | "HOLD" | "SELL",
   "symbol": "${s}",
   "companyName": "${cName}",
-  "rationale": "消除迷茫的核心确定性逻辑 (论证为何能在限定 ${targetT} 日内达成 +${targetG}% 目标，明确挂单区间与 ${targetT} 日时间止损纪律)",
+  "rationale": "基于当前 [${session.phaseLabel}] 时态与 【${session.activeRoleName}】 角色，消除迷茫的核心确定性逻辑 (论证为何能在限定 ${targetT} 日内达成 +${targetG}% 目标，明确挂单区间 entryZone 与时间止损纪律)",
   "urgency": "HIGH" | "MEDIUM" | "LOW"
 }`;
 

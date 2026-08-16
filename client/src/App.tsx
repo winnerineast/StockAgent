@@ -18,6 +18,10 @@ export default function App() {
   const [isUnlocked, setIsUnlocked] = useState<boolean>(false);
   const prevOpenDConnectedRef = useRef<boolean>(false);
 
+  // 🌟 美股时空罗盘与时空穿梭模式
+  const [marketSession, setMarketSession] = useState<any>(null);
+  const [simulationMode, setSimulationMode] = useState<any>("REALTIME");
+
   // Data
   const [portfolioData, setPortfolioData] = useState<any>({
     netAssets: 0,
@@ -41,9 +45,27 @@ export default function App() {
   const [kgData, setKgData] = useState<any>(null);
   const userSelectedModelRef = useRef<boolean>(false);
 
+  // 🌟 拉取当前/模拟的美股交易时态
+  const fetchMarketSession = async (mode: string = simulationMode) => {
+    try {
+      let url = "/api/stock/market-session";
+      if (mode === "SIMULATE_PRE_MARKET") url += "?marketPhaseOverride=PRE_MARKET&simulatedTime=2026-08-17T08:30:00-04:00";
+      else if (mode === "SIMULATE_INTRADAY") url += "?marketPhaseOverride=INTRADAY&simulatedTime=2026-08-17T14:00:00-04:00";
+      else if (mode === "SIMULATE_POST_MARKET") url += "?marketPhaseOverride=POST_MARKET&simulatedTime=2026-08-17T17:30:00-04:00";
+      else if (mode === "SIMULATE_WEEKEND") url += "?marketPhaseOverride=WEEKEND_OR_HOLIDAY&simulatedTime=2026-08-16T12:00:00-04:00";
+
+      const res = await fetch(url);
+      const json = await res.json();
+      if (json.success && json.data) {
+        setMarketSession(json.data);
+      }
+    } catch (e) {}
+  };
+
   // Check statuses and fetch initial portfolio
   const fetchStatus = async () => {
     try {
+      fetchMarketSession();
       const res = await fetch("/api/stock/status");
       const json = await res.json();
       if (json.success) {
@@ -251,6 +273,16 @@ export default function App() {
         body: JSON.stringify({
           customBudget: budgetToUse,
           ollamaModel: modelUsed,
+          marketPhaseOverride: simulationMode === "SIMULATE_PRE_MARKET" ? "PRE_MARKET"
+            : simulationMode === "SIMULATE_INTRADAY" ? "INTRADAY"
+            : simulationMode === "SIMULATE_POST_MARKET" ? "POST_MARKET"
+            : simulationMode === "SIMULATE_WEEKEND" ? "WEEKEND_OR_HOLIDAY"
+            : undefined,
+          simulatedTime: simulationMode === "SIMULATE_PRE_MARKET" ? "2026-08-17T08:30:00-04:00"
+            : simulationMode === "SIMULATE_INTRADAY" ? "2026-08-17T14:00:00-04:00"
+            : simulationMode === "SIMULATE_POST_MARKET" ? "2026-08-17T17:30:00-04:00"
+            : simulationMode === "SIMULATE_WEEKEND" ? "2026-08-16T12:00:00-04:00"
+            : undefined,
         }),
       });
       const json = await res.json();
@@ -258,6 +290,7 @@ export default function App() {
         setScreenerActions(json.data.output.actions || []);
         setMarketOverview(json.data.output.marketOverview || "");
         setPerStockItems(json.data.output.perStockDeductionRetro || []);
+        if (json.data.output.marketSession) setMarketSession(json.data.output.marketSession);
         if (json.data.deductionPipeline) setDeductionPipeline(json.data.deductionPipeline);
         await fetchPortfolio();
         await fetchRetrospectives();
@@ -277,6 +310,11 @@ export default function App() {
       clearInterval(stagePollInterval);
       setLoading(false);
     }
+  };
+
+  const handleSelectSimulationMode = (mode: any) => {
+    setSimulationMode(mode);
+    fetchMarketSession(mode);
   };
 
   const handleOpenKnowledgeGraph = async (symbol: string) => {
@@ -332,7 +370,7 @@ export default function App() {
     fetchStrategyHistory();
     handleGenerateStrategy();
 
-    // 3 秒定时轻量轮询连通状态 (MooMoo OpenD, SearXNG, Ollama)
+    // 3 秒定时轻量轮询连通状态与时态 (MooMoo OpenD, SearXNG, Ollama)
     const statusInterval = setInterval(() => {
       fetchStatus();
     }, 3000);
@@ -371,6 +409,9 @@ export default function App() {
         onOpenUnlockModal={() => setUnlockModalOpen(true)}
         onOpenDeductionModal={() => setDeductionModalOpen(true)}
         hasDeductionData={!!deductionPipeline}
+        marketSession={marketSession}
+        simulationMode={simulationMode}
+        onSelectSimulationMode={handleSelectSimulationMode}
       />
 
       {/* Main Container */}
@@ -398,6 +439,7 @@ export default function App() {
           onOpenKnowledgeGraph={handleOpenKnowledgeGraph}
           onOpenUnlockModal={() => setUnlockModalOpen(true)}
           onExecuteRebalance={handleExecuteRebalance}
+          marketSession={marketSession}
         />
       </main>
 
