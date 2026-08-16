@@ -124,14 +124,20 @@ interface PerStockDeductionRetroCardProps {
       targetPrice?: number;
       stopLossPrice?: number;
       riskRewardRatio?: number;
+      certaintyScore?: number;
+      goalAttainmentProbability?: number;
+      entryZone?: { min: number; max: number };
+      timeStopRule?: string;
     };
   };
   onOpenKnowledgeGraph: (symbol: string) => void;
+  onOpenDeductionModal?: (item: any) => void;
 }
 
 export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProps> = ({
   item,
   onOpenKnowledgeGraph,
+  onOpenDeductionModal,
 }) => {
   const [expanded, setExpanded] = useState<boolean>(true);
   const [subTab, setSubTab] = useState<"retro" | "capitalFlow" | "community" | "fundamentals" | "kg" | "news" | "position">("retro");
@@ -302,8 +308,16 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
             </span>
           )}
           <button
+            onClick={() => onOpenDeductionModal && onOpenDeductionModal(item)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white text-xs font-bold shadow-md shadow-cyan-500/20 transition-all hover:scale-105 active:scale-95"
+            title="点击打开单股目标驱动推演独立全景舱"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>目标驱动推演全景舱 ↗</span>
+          </button>
+          <button
             onClick={() => onOpenKnowledgeGraph(item.symbol)}
-            className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-700 text-cyan-400 hover:bg-cyan-500/10 text-xs transition-all font-semibold"
+            className="px-2.5 py-1.5 rounded-xl bg-slate-950 border border-slate-700 text-cyan-400 hover:bg-cyan-500/10 text-xs transition-all font-semibold"
           >
             产业链图谱 ↗
           </button>

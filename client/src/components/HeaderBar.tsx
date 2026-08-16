@@ -116,14 +116,21 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                 onChange={(e) => onSelectOllamaModel(e.target.value)}
                 className="bg-slate-950 border border-slate-700 text-cyan-300 text-xs rounded px-2 py-0.5 focus:outline-none focus:border-cyan-400 font-semibold"
               >
-                {ollamaStatus.models.map((m) => {
-                  const isRec = m === ollamaStatus.recommendedModel;
-                  return (
-                    <option key={m} value={m}>
-                      {isRec ? `⭐ [硬件推荐] ${m}` : m}
-                    </option>
-                  );
-                })}
+                {ollamaStatus.models
+                  .slice()
+                  .sort((a, b) => {
+                    if (a === ollamaStatus.recommendedModel) return -1;
+                    if (b === ollamaStatus.recommendedModel) return 1;
+                    return a.localeCompare(b);
+                  })
+                  .map((m) => {
+                    const isRec = m === ollamaStatus.recommendedModel;
+                    return (
+                      <option key={m} value={m}>
+                        {isRec ? `⭐ [硬件推荐] ${m}` : m}
+                      </option>
+                    );
+                  })}
               </select>
             ) : (
               <span className="text-amber-400 font-semibold">未检测到模型</span>

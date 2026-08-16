@@ -41,6 +41,11 @@ export interface OpenDSnapshotItem {
   mainCapitalInflow?: number;
 }
 
+export interface EntryZone {
+  min: number;
+  max: number;
+}
+
 export interface ActionItem {
   action: "BUY" | "SELL" | "HOLD" | "TRIM";
   symbol: string;
@@ -64,6 +69,19 @@ export interface ActionItem {
   strategyCategory?: StockStrategyCategory;
   strategyCategoryLabel?: string;
   strategyCategoryReason?: string;
+
+  // 目标驱动与资金空间量化新增字段
+  targetTimeHorizonDays?: number;      // 限定交易日跨度 T (如 3, 5, 10, 20 天)
+  targetProfitGoalPct?: number;        // 盈利目标 G% (如 +5%, +8%, +15%)
+  goalAttainmentProbability?: number;  // T 日目标达成概率 % (如 74.5%)
+  certaintyScore?: number;             // 确定性指数 / 消除迷茫度 (0~100)
+  timeStopRule?: string;               // 严格时间止损纪律 (如 "持有至第 5 个交易日收盘前若未破目标无条件离场")
+  entryZone?: EntryZone;               // 建议挂单建仓区间 { min, max }
+  capitalAllocationAmount?: number;    // 建议分配操盘资金 ($)
+  capitalAllocationPct?: number;       // 占总可用操盘空间比例 (%)
+  maxRiskAmount?: number;              // 触及止损最大可承受损失 ($)
+  expectedPnLAmount?: number;          // 目标达成预期净盈利 ($)
+  goalDrivenRationale?: string;        // 消除迷茫度的核心因果逻辑
 }
 
 export interface RiskAlert {
@@ -349,10 +367,32 @@ export interface DeductionPipelineData {
   rawOllamaOutput?: string;
 }
 
+export interface CapitalSpaceAnalysis {
+  existingHoldingsValue: number;       // 当前现有持仓总市值 ($)
+  potentialFreedCapital: number;       // 调仓 (止盈/止损) 预计释放回流资金 ($)
+  userInputDeployableCapital: number;  // 用户在控制舱指定动用资金 ($)
+  actualAvailableCash: number;         // 账户当前真实闲置现金 ($)
+  totalDeployableCapacity: number;     // 最终合成总可用操盘资金空间 ($)
+  allocatedCapital: number;            // 建议开仓/加仓总分配金额 ($)
+  cashBufferAmount: number;            // 建议保留的安全垫现金 ($)
+  cashBufferPct: number;               // 现金安全垫比例 (%)
+}
+
+export interface GoalDrivenConstraint {
+  targetTimeHorizonDays: number;       // 限定交易日 T (默认 5)
+  targetProfitGoalPct: number;         // 盈利目标 G% (默认 8.0%)
+  maxDrawdownPct: number;              // 最大回撤预算 D% (默认 4.0%)
+  userDeployableBudget: number;        // 用户预算 C ($)
+}
+
 export interface DailyAllocationOutput {
   marketOverview: string;
   macroIntel?: MacroMarketIntel;
   macroSnapshot?: DailyMacroSnapshotDTO;
+  capitalSpace?: CapitalSpaceAnalysis;
+  goalConstraints?: GoalDrivenConstraint;
+  overallCertaintyScore?: number;      // 全局消除迷茫度得分 (0~100)
+  overallGoalProbability?: number;     // 组合总体目标达成期望概率 (%)
   existingPositionGuidance: string;
   newPositionGuidance: string;
   actions: ActionItem[];

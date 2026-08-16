@@ -191,12 +191,22 @@ stockRouter.get("/strategy/stage", (_req: Request, res: Response) => {
 
 // 5.5 调用 Ollama 模型 / 规则引擎生成开盘调仓指南与复盘经验
 stockRouter.post("/strategy/generate", async (req: Request, res: Response) => {
-  const { customBudget, ollamaModel } = req.body;
+  const {
+    customBudget,
+    ollamaModel,
+    targetProfitGoalPct,
+    targetTimeHorizonDays,
+    maxDrawdownPct,
+  } = req.body;
   try {
     const result = await dailyStrategyDirector.generateDailyStrategy(
       "default-portfolio",
       customBudget ? Number(customBudget) : undefined,
-      ollamaModel
+      ollamaModel,
+      undefined,
+      targetProfitGoalPct !== undefined ? Number(targetProfitGoalPct) : 8.0,
+      targetTimeHorizonDays !== undefined ? Number(targetTimeHorizonDays) : 5,
+      maxDrawdownPct !== undefined ? Number(maxDrawdownPct) : 4.0
     );
     return res.json({ success: true, data: result });
   } catch (err: any) {

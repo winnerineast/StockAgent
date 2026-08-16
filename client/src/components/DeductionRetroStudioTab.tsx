@@ -18,10 +18,16 @@ import {
   ExternalLink,
   Flame,
   AlertTriangle,
+  Search,
+  ArrowUpDown,
+  Filter,
+  SlidersHorizontal,
+  Target,
 } from "lucide-react";
 import { DeductionProgressStepper, StageStep } from "./DeductionProgressStepper";
 import { PerStockDeductionRetroCard } from "./PerStockDeductionRetroCard";
 import { MacroSectorStudioCard } from "./MacroSectorStudioCard";
+import { SingleStockDeductionModal } from "./SingleStockDeductionModal";
 
 export interface MacroMarketIntel {
   sentimentMood: "BULLISH" | "BEARISH" | "NEUTRAL" | "VOLATILE";
@@ -188,7 +194,13 @@ export const DeductionRetroStudioTab: React.FC<DeductionRetroStudioTabProps> = (
 }) => {
   const [customBudget, setCustomBudget] = useState<number>(1000);
   const [riskPreference, setRiskPreference] = useState<string>("BALANCED");
-  const [filterCategory, setFilterCategory] = useState<"ALL" | "REBALANCE" | "HOLDING" | "WATCHLIST" | "CLEARED">("ALL");
+  const [filterCategory, setFilterCategory] = useState<
+    "ALL" | "HIGH_CERTAINTY" | "REBALANCE" | "HOLDING" | "WATCHLIST" | "EXPERIENCE" | "LESSON" | "CLEARED"
+  >("ALL");
+  const [strategyFilter, setStrategyFilter] = useState<string>("ALL");
+  const [sortBy, setSortBy] = useState<"CERTAINTY_DESC" | "GOAL_PROB_DESC" | "ALLOCATION_DESC" | "PNL_DESC" | "SYMBOL_ASC">("CERTAINTY_DESC");
+  const [searchStockQuery, setSearchStockQuery] = useState<string>("");
+  const [selectedStockForModal, setSelectedStockForModal] = useState<any | null>(null);
 
   // 选股与超跌建仓搜索/动作筛选
   const [screenerSearchQuery, setScreenerSearchQuery] = useState<string>("");
@@ -205,8 +217,6 @@ export const DeductionRetroStudioTab: React.FC<DeductionRetroStudioTabProps> = (
     if (currentStep > targetStep) return "DONE";
     return "PENDING";
   };
-
-  const [strategyFilter, setStrategyFilter] = useState<string>("ALL");
 
   // 1. 判定标的是否为当前实盘持有 (持股 > 0)
   const isHolding = (item: any) => {
@@ -252,60 +262,95 @@ export const DeductionRetroStudioTab: React.FC<DeductionRetroStudioTabProps> = (
     return false;
   };
 
-  const rebalanceCount = useMemo(
-    () => perStockItems.filter(isActionable).length,
-    [perStockItems, screenerActions, rebalanceActions]
-  );
-  const holdingCount = useMemo(
-    () => perStockItems.filter(isHolding).length,
-    [perStockItems]
-  );
-  const watchlistCount = useMemo(
-    () => perStockItems.filter(isWatchlist).length,
-    [perStockItems]
-  );
-  const clearedCount = useMemo(
-    () => perStockItems.filter(isCleared).length,
-    [perStockItems]
-  );
-  const oversoldCount = useMemo(
-    () => perStockItems.filter((item) => item.strategyCategory === "OVERSOLD_BUY").length,
-    [perStockItems]
-  );
-  const fundamentalCount = useMemo(
-    () => perStockItems.filter((item) => item.strategyCategory === "FUNDAMENTAL_BUY").length,
-    [perStockItems]
-  );
-  const newsCount = useMemo(
-    () => perStockItems.filter((item) => item.strategyCategory === "NEWS_CATALYST_BUY").length,
-    [perStockItems]
-  );
-  const capitalCount = useMemo(
-    () => perStockItems.filter((item) => item.strategyCategory === "CAPITAL_INFLOW_BUY").length,
-    [perStockItems]
-  );
-  const watchCount = useMemo(
-    () => perStockItems.filter((item) => item.strategyCategory === "WATCH_AND_WAIT").length,
-    [perStockItems]
-  );
+  // 5. 判定标的是否属于高确定性精选重仓 (得分 >= 75 或建议买入)
+  const isHighCertainty = (item: any) => {
+    const score = item.currentRecommendation?.certaintyScore ?? 0;
+    const isBuy = item.currentRecommendation?.action === "BUY" && (item.currentRecommendation?.suggestedShares || 0) > 0;
+    return score >= 75 || isBuy;
+  };
 
-  const filteredItems = perStockItems.filter((item) => {
-    // 1. 状态/池子归属与调仓意图过滤 (全部 / 需要调仓 / 持仓 / 自选关注 / 既往清仓)
-    if (filterCategory === "REBALANCE") {
-      if (!isActionable(item)) return false;
-    } else if (filterCategory === "HOLDING") {
-      if (!isHolding(item)) return false;
-    } else if (filterCategory === "WATCHLIST") {
-      if (!isWatchlist(item)) return false;
-    } else if (filterCategory === "CLEARED") {
-      if (!isCleared(item)) return false;
-    }
+  // 6. 判定历史核验结果
+  const isExperience = (item: any) => item.pastRetro?.verificationOutcome === "EXPERIENCE";
+  const isLesson = (item: any) => item.pastRetro?.verificationOutcome === "LESSON";
 
-    // 2. 5大策略分类过滤
-    if (strategyFilter !== "ALL" && item.strategyCategory !== strategyFilter) return false;
+  // 各分类数量动态统计
+  const highCertaintyCount = useMemo(() => perStockItems.filter(isHighCertainty).length, [perStockItems]);
+  const rebalanceCount = useMemo(() => perStockItems.filter(isActionable).length, [perStockItems, screenerActions, rebalanceActions]);
+  const holdingCount = useMemo(() => perStockItems.filter(isHolding).length, [perStockItems]);
+  const watchlistCount = useMemo(() => perStockItems.filter(isWatchlist).length, [perStockItems]);
+  const experienceCount = useMemo(() => perStockItems.filter(isExperience).length, [perStockItems]);
+  const lessonCount = useMemo(() => perStockItems.filter(isLesson).length, [perStockItems]);
+  const clearedCount = useMemo(() => perStockItems.filter(isCleared).length, [perStockItems]);
 
-    return true;
-  });
+  const oversoldCount = useMemo(() => perStockItems.filter((item) => item.strategyCategory === "OVERSOLD_BUY").length, [perStockItems]);
+  const fundamentalCount = useMemo(() => perStockItems.filter((item) => item.strategyCategory === "FUNDAMENTAL_BUY").length, [perStockItems]);
+  const newsCount = useMemo(() => perStockItems.filter((item) => item.strategyCategory === "NEWS_CATALYST_BUY").length, [perStockItems]);
+  const capitalCount = useMemo(() => perStockItems.filter((item) => item.strategyCategory === "CAPITAL_INFLOW_BUY").length, [perStockItems]);
+  const watchCount = useMemo(() => perStockItems.filter((item) => item.strategyCategory === "WATCH_AND_WAIT").length, [perStockItems]);
+
+  const filteredItems = useMemo(() => {
+    let result = perStockItems.filter((item) => {
+      // 1. 搜索关键词匹配
+      if (searchStockQuery) {
+        const q = searchStockQuery.toLowerCase().trim();
+        const symMatch = item.symbol?.toLowerCase().includes(q);
+        const nameMatch = item.companyName?.toLowerCase().includes(q);
+        if (!symMatch && !nameMatch) return false;
+      }
+
+      // 2. 状态/决策与确定性池子过滤
+      if (filterCategory === "HIGH_CERTAINTY") {
+        if (!isHighCertainty(item)) return false;
+      } else if (filterCategory === "REBALANCE") {
+        if (!isActionable(item)) return false;
+      } else if (filterCategory === "HOLDING") {
+        if (!isHolding(item)) return false;
+      } else if (filterCategory === "WATCHLIST") {
+        if (!isWatchlist(item)) return false;
+      } else if (filterCategory === "EXPERIENCE") {
+        if (!isExperience(item)) return false;
+      } else if (filterCategory === "LESSON") {
+        if (!isLesson(item)) return false;
+      } else if (filterCategory === "CLEARED") {
+        if (!isCleared(item)) return false;
+      }
+
+      // 3. 5大策略分类过滤
+      if (strategyFilter !== "ALL" && item.strategyCategory !== strategyFilter) return false;
+
+      return true;
+    });
+
+    // 4. 多维度智能排序
+    result = [...result].sort((a, b) => {
+      if (sortBy === "CERTAINTY_DESC") {
+        const scoreA = a.currentRecommendation?.certaintyScore ?? (isHighCertainty(a) ? 80 : 50);
+        const scoreB = b.currentRecommendation?.certaintyScore ?? (isHighCertainty(b) ? 80 : 50);
+        return scoreB - scoreA;
+      }
+      if (sortBy === "GOAL_PROB_DESC") {
+        const probA = a.currentRecommendation?.goalAttainmentProbability ?? 50;
+        const probB = b.currentRecommendation?.goalAttainmentProbability ?? 50;
+        return probB - probA;
+      }
+      if (sortBy === "ALLOCATION_DESC") {
+        const amtA = (a.currentRecommendation?.suggestedShares || 0) * (a.currentRecommendation?.estimatedPrice || a.position?.marketPrice || 0);
+        const amtB = (b.currentRecommendation?.suggestedShares || 0) * (b.currentRecommendation?.estimatedPrice || b.position?.marketPrice || 0);
+        return amtB - amtA;
+      }
+      if (sortBy === "PNL_DESC") {
+        const pnlA = a.position ? (a.position.marketPrice - a.position.costBasis) * a.position.shares : -999999;
+        const pnlB = b.position ? (b.position.marketPrice - b.position.costBasis) * b.position.shares : -999999;
+        return pnlB - pnlA;
+      }
+      if (sortBy === "SYMBOL_ASC") {
+        return a.symbol.localeCompare(b.symbol);
+      }
+      return 0;
+    });
+
+    return result;
+  }, [perStockItems, filterCategory, strategyFilter, sortBy, searchStockQuery, screenerActions, rebalanceActions]);
 
   // 汇总超跌机会与 Screener 动作列表
   const combinedScreenerItems = [
@@ -529,101 +574,194 @@ export const DeductionRetroStudioTab: React.FC<DeductionRetroStudioTabProps> = (
             </div>
           </div>
 
-          {/* 3. 标签组 (池子归属标签 + 5大策略分类导航过滤栏) */}
-          <div className="space-y-2">
-            {/* 3.1 标的池归属标签组 (全部标的 / 需要调仓 / 当前持仓 / 自选关注 / 既往清仓) */}
-            <div className="flex flex-wrap items-center justify-between gap-2 p-2 rounded-xl bg-slate-950/80 border border-slate-800 text-xs">
+          {/* 3. 目标驱动量化智能导航与分类控制台 (2-Tier Integrated Quant Navigation Console) */}
+          <div className="space-y-2.5">
+            {/* 3.1 Tier 1: 标的决策与确定性池子过滤栏 + 实时搜索框 */}
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 p-2.5 rounded-2xl bg-slate-950/90 border border-slate-800/90 text-xs shadow-lg shadow-cyan-950/10">
               <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-[11px] text-slate-400 font-bold px-1 flex items-center gap-1">
-                  <span>📂 标的分类:</span>
+                <span className="text-[11px] text-slate-400 font-bold px-1.5 flex items-center gap-1 shrink-0">
+                  <Filter className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>标的与决策:</span>
                 </span>
+
+                {/* 1. 全部标的 */}
                 <button
                   onClick={() => setFilterCategory("ALL")}
-                  className={`px-2.5 py-1 rounded-lg font-semibold transition-all cursor-pointer ${
+                  className={`px-2.5 py-1 rounded-xl font-semibold transition-all cursor-pointer ${
                     filterCategory === "ALL"
                       ? "bg-cyan-500 text-slate-950 font-bold shadow-md shadow-cyan-500/20"
                       : "text-slate-400 hover:text-white bg-slate-900 border border-slate-800"
                   }`}
                 >
-                  全部标的 ({perStockItems.length})
+                  🌐 全部标的 ({perStockItems.length})
                 </button>
 
-                {/* 🌟 核心调仓过滤标签：需要调仓 (加仓/减仓/建仓/清仓) */}
+                {/* 2. 🏆 核心高确定性精选重仓 */}
+                <button
+                  onClick={() => setFilterCategory("HIGH_CERTAINTY")}
+                  className={`px-3 py-1 rounded-xl font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    filterCategory === "HIGH_CERTAINTY"
+                      ? "bg-amber-500 text-slate-950 font-extrabold shadow-md shadow-amber-500/30 ring-1 ring-amber-400"
+                      : "text-amber-400 hover:text-amber-300 bg-amber-950/40 border border-amber-500/40"
+                  }`}
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  <span>🏆 高确定性重仓 ({highCertaintyCount})</span>
+                </button>
+
+                {/* 3. ⚡ 建议调仓 (买入/减仓/清仓) */}
                 <button
                   onClick={() => setFilterCategory("REBALANCE")}
-                  className={`px-3 py-1 rounded-lg font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  className={`px-3 py-1 rounded-xl font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
                     filterCategory === "REBALANCE"
                       ? "bg-emerald-500 text-slate-950 font-bold shadow-md shadow-emerald-500/30 ring-1 ring-emerald-400"
                       : "text-emerald-400 hover:text-emerald-300 bg-emerald-950/40 border border-emerald-500/40"
                   }`}
                 >
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                  <span>⚡ 需要调仓 ({rebalanceCount})</span>
+                  <span>⚡ 建议调仓 ({rebalanceCount})</span>
                 </button>
 
+                {/* 4. 🛡️ 实盘持仓 */}
                 <button
                   onClick={() => setFilterCategory("HOLDING")}
-                  className={`px-2.5 py-1 rounded-lg font-semibold transition-all cursor-pointer ${
+                  className={`px-2.5 py-1 rounded-xl font-semibold transition-all cursor-pointer ${
                     filterCategory === "HOLDING"
                       ? "bg-cyan-500 text-slate-950 font-bold shadow-md shadow-cyan-500/20"
                       : "text-slate-400 hover:text-white bg-slate-900 border border-slate-800"
                   }`}
                 >
-                  当前持仓 ({holdingCount})
+                  🛡️ 实盘持仓 ({holdingCount})
                 </button>
+
+                {/* 5. ⏳ 自选备选 */}
                 <button
                   onClick={() => setFilterCategory("WATCHLIST")}
-                  className={`px-2.5 py-1 rounded-lg font-semibold transition-all cursor-pointer ${
+                  className={`px-2.5 py-1 rounded-xl font-semibold transition-all cursor-pointer ${
                     filterCategory === "WATCHLIST"
                       ? "bg-cyan-500 text-slate-950 font-bold shadow-md shadow-cyan-500/20"
                       : "text-slate-400 hover:text-white bg-slate-900 border border-slate-800"
                   }`}
                 >
-                  自选关注 ({watchlistCount})
+                  ⏳ 观察备选 ({watchlistCount})
                 </button>
-                <button
-                  onClick={() => setFilterCategory("CLEARED")}
-                  className={`px-2.5 py-1 rounded-lg font-semibold transition-all cursor-pointer ${
-                    filterCategory === "CLEARED"
-                      ? "bg-cyan-500 text-slate-950 font-bold shadow-md shadow-cyan-500/20"
-                      : "text-slate-400 hover:text-white bg-slate-900 border border-slate-800"
-                  }`}
-                >
-                  既往清仓 ({clearedCount})
-                </button>
+
+                {/* 6. 🟢 成功经验反哺 (若有) */}
+                {experienceCount > 0 && (
+                  <button
+                    onClick={() => setFilterCategory("EXPERIENCE")}
+                    className={`px-2.5 py-1 rounded-xl font-semibold transition-all cursor-pointer flex items-center gap-1 ${
+                      filterCategory === "EXPERIENCE"
+                        ? "bg-emerald-500 text-slate-950 font-bold shadow-md shadow-emerald-500/20"
+                        : "text-emerald-300 hover:text-white bg-emerald-950/30 border border-emerald-500/30"
+                    }`}
+                  >
+                    <span>🟢 经验反哺 ({experienceCount})</span>
+                  </button>
+                )}
+
+                {/* 7. 🔴 失败教训警示 (若有) */}
+                {lessonCount > 0 && (
+                  <button
+                    onClick={() => setFilterCategory("LESSON")}
+                    className={`px-2.5 py-1 rounded-xl font-semibold transition-all cursor-pointer flex items-center gap-1 ${
+                      filterCategory === "LESSON"
+                        ? "bg-rose-500 text-white font-bold shadow-md shadow-rose-500/20"
+                        : "text-rose-300 hover:text-white bg-rose-950/30 border border-rose-500/30"
+                    }`}
+                  >
+                    <span>🔴 教训警示 ({lessonCount})</span>
+                  </button>
+                )}
+
+                {/* 8. 既往清仓 */}
+                {clearedCount > 0 && (
+                  <button
+                    onClick={() => setFilterCategory("CLEARED")}
+                    className={`px-2.5 py-1 rounded-xl font-semibold transition-all cursor-pointer ${
+                      filterCategory === "CLEARED"
+                        ? "bg-cyan-500 text-slate-950 font-bold shadow-md shadow-cyan-500/20"
+                        : "text-slate-400 hover:text-white bg-slate-900 border border-slate-800"
+                    }`}
+                  >
+                    既往清仓 ({clearedCount})
+                  </button>
+                )}
               </div>
 
-              <div className="text-[11px] text-slate-400 font-mono hidden md:block">
-                已过滤显示: <strong className="text-cyan-400">{filteredItems.length}</strong> / {perStockItems.length} 标的
+              {/* 实时标的搜索框 */}
+              <div className="relative min-w-[200px] shrink-0">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="搜索代码 / 公司名..."
+                  value={searchStockQuery}
+                  onChange={(e) => setSearchStockQuery(e.target.value)}
+                  className="w-full pl-8 pr-7 py-1 bg-slate-900/90 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/70 transition-all font-mono"
+                />
+                {searchStockQuery && (
+                  <button
+                    onClick={() => setSearchStockQuery("")}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white text-xs cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                )}
               </div>
             </div>
 
-            {/* 3.2 5大策略分类导航过滤栏 */}
-            <div className="flex flex-wrap items-center gap-1.5 p-2 rounded-xl bg-slate-950/80 border border-slate-800 text-xs">
-              <span className="text-[11px] text-slate-400 font-bold px-1.5 flex items-center gap-1">
-                <span>🎯 策略分类:</span>
-              </span>
-              {[
-                { id: "ALL", label: `全部策略 (${perStockItems.length})`, icon: "🌐" },
-                { id: "OVERSOLD_BUY", label: `超跌建仓 (${oversoldCount})`, icon: "📉", color: "text-cyan-300" },
-                { id: "FUNDAMENTAL_BUY", label: `基本面亮眼 (${fundamentalCount})`, icon: "💎", color: "text-emerald-300" },
-                { id: "NEWS_CATALYST_BUY", label: `消息面强劲 (${newsCount})`, icon: "🚀", color: "text-indigo-300" },
-                { id: "CAPITAL_INFLOW_BUY", label: `大资金进入 (${capitalCount})`, icon: "🏦", color: "text-amber-300" },
-                { id: "WATCH_AND_WAIT", label: `可以观望 (${watchCount})`, icon: "👀", color: "text-slate-400" },
-              ].map((cat) => (
-                <button
-                  key={cat.id}
-                  onClick={() => setStrategyFilter(cat.id)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
-                    strategyFilter === cat.id
-                      ? "bg-cyan-500 text-slate-950 font-bold shadow-md shadow-cyan-500/20"
-                      : "bg-slate-900/90 text-slate-400 hover:text-white border border-slate-800"
-                  }`}
-                >
-                  <span>{cat.icon}</span>
-                  <span>{cat.label}</span>
-                </button>
-              ))}
+            {/* 3.2 Tier 2: 5大策略量化驱动因子过滤栏 + 多维排序下拉选择器 */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-2.5 rounded-2xl bg-slate-950/80 border border-slate-800/80 text-xs">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[11px] text-slate-400 font-bold px-1.5 flex items-center gap-1 shrink-0">
+                  <Target className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>策略因子:</span>
+                </span>
+                {[
+                  { id: "ALL", label: `全部因子 (${perStockItems.length})`, icon: "🌐" },
+                  { id: "CAPITAL_INFLOW_BUY", label: `主力净流入 (${capitalCount})`, icon: "💰", color: "text-amber-300" },
+                  { id: "OVERSOLD_BUY", label: `超跌反弹 (${oversoldCount})`, icon: "📉", color: "text-cyan-300" },
+                  { id: "FUNDAMENTAL_BUY", label: `安全边际 (${fundamentalCount})`, icon: "💎", color: "text-emerald-300" },
+                  { id: "NEWS_CATALYST_BUY", label: `消息催化 (${newsCount})`, icon: "🚀", color: "text-indigo-300" },
+                  { id: "WATCH_AND_WAIT", label: `中性观望 (${watchCount})`, icon: "👀", color: "text-slate-400" },
+                ].map((cat) => (
+                  <button
+                    key={cat.id}
+                    onClick={() => setStrategyFilter(cat.id)}
+                    className={`px-2.5 py-1 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                      strategyFilter === cat.id
+                        ? "bg-indigo-600 text-white font-bold shadow-md shadow-indigo-500/20 ring-1 ring-indigo-400"
+                        : "bg-slate-900/90 text-slate-400 hover:text-white border border-slate-800"
+                    }`}
+                  >
+                    <span>{cat.icon}</span>
+                    <span>{cat.label}</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* 多维排序下拉选择器 + 计数 */}
+              <div className="flex items-center gap-2.5 shrink-0 self-end sm:self-auto">
+                <div className="flex items-center gap-1.5 bg-slate-900/90 px-2.5 py-1 rounded-xl border border-slate-800 text-[11px] text-slate-300">
+                  <ArrowUpDown className="w-3 h-3 text-cyan-400" />
+                  <span className="text-slate-400 hidden md:inline">排序:</span>
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as any)}
+                    className="bg-transparent text-white font-semibold focus:outline-none cursor-pointer text-[11px]"
+                  >
+                    <option value="CERTAINTY_DESC" className="bg-slate-900 text-white">🏆 确定性得分 (从高到低)</option>
+                    <option value="GOAL_PROB_DESC" className="bg-slate-900 text-white">🎯 T日达成概率 (从高到低)</option>
+                    <option value="ALLOCATION_DESC" className="bg-slate-900 text-white">💰 建议分配金额 (从多到少)</option>
+                    <option value="PNL_DESC" className="bg-slate-900 text-white">📈 实盘浮动盈亏 (从高到低)</option>
+                    <option value="SYMBOL_ASC" className="bg-slate-900 text-white">🔤 股票代码 (A-Z)</option>
+                  </select>
+                </div>
+
+                <div className="text-[11px] text-slate-400 font-mono">
+                  已显示: <strong className="text-cyan-400 font-bold">{filteredItems.length}</strong> / {perStockItems.length} 标的
+                </div>
+              </div>
             </div>
           </div>
 
@@ -657,6 +795,7 @@ export const DeductionRetroStudioTab: React.FC<DeductionRetroStudioTabProps> = (
                   key={idx}
                   item={item}
                   onOpenKnowledgeGraph={onOpenKnowledgeGraph}
+                  onOpenDeductionModal={(stockItem) => setSelectedStockForModal(stockItem)}
                 />
               ))
             ) : (
@@ -676,6 +815,18 @@ export const DeductionRetroStudioTab: React.FC<DeductionRetroStudioTabProps> = (
           </div>
         </div>
       </div>
+
+      {/* 🌟 目标驱动与消除迷茫度单股独立全景推演控制舱 (支持随时一键关闭返回主页面) */}
+      {selectedStockForModal && (
+        <SingleStockDeductionModal
+          isOpen={true}
+          item={selectedStockForModal}
+          availableCash={cashBalance}
+          totalBudget={netAssets}
+          onClose={() => setSelectedStockForModal(null)}
+          onOpenKnowledgeGraph={onOpenKnowledgeGraph}
+        />
+      )}
     </div>
   );
 };

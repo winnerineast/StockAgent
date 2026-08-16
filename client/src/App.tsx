@@ -39,6 +39,7 @@ export default function App() {
   const [deductionModalOpen, setDeductionModalOpen] = useState<boolean>(false);
   const [selectedKgSymbol, setSelectedKgSymbol] = useState<string | null>(null);
   const [kgData, setKgData] = useState<any>(null);
+  const userSelectedModelRef = useRef<boolean>(false);
 
   // Check statuses and fetch initial portfolio
   const fetchStatus = async () => {
@@ -57,7 +58,12 @@ export default function App() {
 
         if (json.data.ollama && json.data.ollama.models.length > 0) {
           const recModel = json.data.ollama.recommendedModel || json.data.ollama.models[0];
-          setSelectedOllamaModel((prev) => (prev && json.data.ollama.models.includes(prev) ? prev : recModel));
+          setSelectedOllamaModel((prev) => {
+            if (userSelectedModelRef.current && prev && json.data.ollama.models.includes(prev)) {
+              return prev;
+            }
+            return recModel;
+          });
         }
 
         // 当 OpenD 从离线变为连通时，自动抓取 OpenD 原生实盘持仓
@@ -352,6 +358,7 @@ export default function App() {
         ollamaStatus={ollamaStatus}
         selectedOllamaModel={selectedOllamaModel}
         onSelectOllamaModel={(m) => {
+          userSelectedModelRef.current = true;
           setSelectedOllamaModel(m);
         }}
         isUnlocked={isUnlocked}

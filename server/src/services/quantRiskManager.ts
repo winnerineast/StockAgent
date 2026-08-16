@@ -1,4 +1,5 @@
-import { ActionItem } from "../types/stockTypes";
+import { ActionItem, CapitalSpaceAnalysis } from "../types/stockTypes";
+import { goalDrivenQuantEngine } from "./goalDrivenQuantEngine";
 
 export interface DynamicRiskTargetResult {
   targetPrice: number;
@@ -10,11 +11,16 @@ export interface DynamicRiskTargetResult {
   projectedPnLPct: number;
   suggestedShares: number;
   estimatedAmount: number;
+  entryZone: { min: number; max: number };
+  timeStopRule: string;
+  goalDrivenRationale: string;
+  goalAttainmentProbability: number;
+  certaintyScore: number;
 }
 
 export class QuantRiskManager {
   /**
-   * 结合标的 ATR 真实波幅、溢出动量得分与账户资金，计算高胜率的止损止盈区间与持仓股数
+   * 结合标的 ATR 真实波幅、目标收益率 G%、限定跨度 T 与可用资金空间，计算高胜率的止损止盈区间与持仓头寸
    */
   public calculateDynamicRiskTargets(params: {
     currentPrice: number;
@@ -25,16 +31,21 @@ export class QuantRiskManager {
     availableCash?: number;
     totalBudget?: number;
     customAtr?: number;
+    targetProfitGoalPct?: number;
+    targetTimeHorizonDays?: number;
+    maxDrawdownPct?: number;
+    strategyCategoryLabel?: string;
   }): DynamicRiskTargetResult {
     const {
       currentPrice,
       action,
-      urgency = "MEDIUM",
       spilloverAlphaScore = 0,
-      networkRiskScore = 30,
       availableCash = 5000,
       totalBudget = 10000,
-      customAtr,
+      targetProfitGoalPct = 8.0,
+      targetTimeHorizonDays = 5,
+      maxDrawdownPct = 4.0,
+      strategyCategoryLabel,
     } = params;
 
     if (currentPrice <= 0) {
@@ -48,64 +59,34 @@ export class QuantRiskManager {
         projectedPnLPct: 0,
         suggestedShares: 0,
         estimatedAmount: 0,
+        entryZone: { min: 0, max: 0 },
+        timeStopRule: "",
+        goalDrivenRationale: "",
+        goalAttainmentProbability: 50,
+        certaintyScore: 50,
       };
     }
 
-    // 1. 估算真实波幅 ATR (默认以日波动 2.5% ~ 3.5% 为锚点)
-    const baseVolPct = networkRiskScore > 60 ? 0.038 : 0.026;
-    const atr = customAtr && customAtr > 0 ? customAtr : currentPrice * baseVolPct;
+    // 1. 计算目标达成概率与确定性
+    const goalAttain = goalDrivenQuantEngine.calculateGoalAttainment({
+      currentPrice,
+      targetProfitGoalPct,
+      targetTimeHorizonDays,
+      spilloverAlpha: spilloverAlphaScore,
+    });
 
-    // 2. 根据产业链溢出动量分微调止盈止损乘数
-    // 溢出动量越强，允许给予更宽的向上止盈空间；网络风险越高，需收窄止损防线
-    const alphaBonus = Math.max(-0.5, Math.min(1.0, spilloverAlphaScore / 50));
-    const riskPenalty = Math.max(0, (networkRiskScore - 40) / 100);
+    const certainty = goalDrivenQuantEngine.calculateCertaintyScore({
+      goalProbability: goalAttain.goalAttainmentProbability,
+    });
 
-    const stopMultiplier = Math.max(1.5, 2.0 + riskPenalty * 0.5); // 止损倍数 1.8 ~ 2.5 ATR
-    const targetMultiplier = Math.max(3.2, 4.0 + alphaBonus * 1.2); // 止盈倍数 3.5 ~ 5.2 ATR
-
-    let stopLossPrice = 0;
-    let targetPrice = 0;
-    let stopLossPct = 0;
-    let takeProfitPct = 0;
-    let riskRewardRatio = 2.0;
-
-    if (action === "BUY") {
-      const stopDistance = Math.max(currentPrice * 0.04, stopMultiplier * atr);
-      const targetDistance = Math.max(currentPrice * 0.085, targetMultiplier * atr);
-
-      stopLossPrice = Number(Math.max(0.01, currentPrice - stopDistance).toFixed(2));
-      targetPrice = Number((currentPrice + targetDistance).toFixed(2));
-
-      stopLossPct = Number((((stopLossPrice - currentPrice) / currentPrice) * 100).toFixed(1));
-      takeProfitPct = Number((((targetPrice - currentPrice) / currentPrice) * 100).toFixed(1));
-
-      const actualRisk = currentPrice - stopLossPrice;
-      const actualReward = targetPrice - currentPrice;
-      riskRewardRatio = actualRisk > 0 ? Number((actualReward / actualRisk).toFixed(2)) : 2.0;
-    } else if (action === "TRIM" || action === "SELL") {
-      // 减仓或清仓：止损位上移保本，止盈位为当前平仓指导价
-      stopLossPrice = Number((currentPrice * 0.98).toFixed(2));
-      targetPrice = Number((currentPrice * 1.02).toFixed(2));
-      stopLossPct = -2.0;
-      takeProfitPct = 2.0;
-      riskRewardRatio = 1.0;
-    } else {
-      // HOLD
-      stopLossPrice = Number((currentPrice * 0.94).toFixed(2));
-      targetPrice = Number((currentPrice * 1.1).toFixed(2));
-      stopLossPct = -6.0;
-      takeProfitPct = 10.0;
-      riskRewardRatio = 1.67;
-    }
-
-    // 3. 基于资金上限与凯利公式计算持仓头寸 (股数分配)
+    // 2. 基于资金上限与凯利公式计算持仓头寸 (股数分配)
     const effectiveCapital = Math.min(availableCash, totalBudget);
-    let positionWeight = 0.15; // 默认单票 15% 仓位
+    let positionWeight = 0.25; // 默认单票 25% 仓位
 
-    if (urgency === "HIGH" && spilloverAlphaScore > 20) {
-      positionWeight = 0.25; // 强确定性机会最高 25% 仓位
-    } else if (urgency === "LOW" || networkRiskScore > 60) {
-      positionWeight = 0.08; // 高风险或低置信度压低至 8%
+    if (certainty.certaintyScore > 80) {
+      positionWeight = 0.35; // 高确定性机会分配 35%
+    } else if (certainty.certaintyScore < 60) {
+      positionWeight = 0.12; // 低确定性压低至 12%
     }
 
     const maxAllocAmount = Math.max(currentPrice, effectiveCapital * positionWeight);
@@ -118,19 +99,38 @@ export class QuantRiskManager {
     }
 
     const estimatedAmount = Number((suggestedShares * currentPrice).toFixed(2));
-    const projectedPnL = Number((suggestedShares * (targetPrice - currentPrice)).toFixed(2));
-    const projectedPnLPct = takeProfitPct;
+
+    // 3. 构建交易路径与时间止损规则
+    const path = goalDrivenQuantEngine.formulateTradePath({
+      symbol: "ASSET",
+      companyName: "Asset",
+      currentPrice,
+      action,
+      targetProfitGoalPct,
+      targetTimeHorizonDays,
+      maxDrawdownPct,
+      certaintyScore: certainty.certaintyScore,
+      goalProbability: goalAttain.goalAttainmentProbability,
+      allocatedAmount: estimatedAmount,
+      suggestedShares,
+      strategyCategoryLabel,
+    });
 
     return {
-      targetPrice,
-      stopLossPrice,
-      takeProfitPct,
-      stopLossPct,
-      riskRewardRatio,
-      projectedPnL,
-      projectedPnLPct,
+      targetPrice: path.targetPrice,
+      stopLossPrice: path.stopLossPrice,
+      takeProfitPct: path.takeProfitPct,
+      stopLossPct: path.stopLossPct,
+      riskRewardRatio: path.riskRewardRatio,
+      projectedPnL: path.expectedPnLAmount,
+      projectedPnLPct: path.takeProfitPct,
       suggestedShares,
       estimatedAmount,
+      entryZone: path.entryZone,
+      timeStopRule: path.timeStopRule,
+      goalDrivenRationale: path.goalDrivenRationale,
+      goalAttainmentProbability: goalAttain.goalAttainmentProbability,
+      certaintyScore: certainty.certaintyScore,
     };
   }
 
@@ -143,7 +143,10 @@ export class QuantRiskManager {
     spilloverAlpha: number,
     networkRisk: number,
     availableCash: number = 5000,
-    totalBudget: number = 10000
+    totalBudget: number = 10000,
+    targetProfitGoalPct: number = 8.0,
+    targetTimeHorizonDays: number = 5,
+    maxDrawdownPct: number = 4.0
   ): ActionItem {
     const quantTargets = this.calculateDynamicRiskTargets({
       currentPrice,
@@ -153,6 +156,10 @@ export class QuantRiskManager {
       networkRiskScore: networkRisk,
       availableCash,
       totalBudget,
+      targetProfitGoalPct,
+      targetTimeHorizonDays,
+      maxDrawdownPct,
+      strategyCategoryLabel: rawAction.strategyCategoryLabel,
     });
 
     return {
@@ -167,6 +174,13 @@ export class QuantRiskManager {
       riskRewardRatio: quantTargets.riskRewardRatio,
       projectedPnL: quantTargets.projectedPnL,
       projectedPnLPct: quantTargets.projectedPnLPct,
+      entryZone: quantTargets.entryZone,
+      timeStopRule: quantTargets.timeStopRule,
+      goalAttainmentProbability: quantTargets.goalAttainmentProbability,
+      certaintyScore: quantTargets.certaintyScore,
+      goalDrivenRationale: quantTargets.goalDrivenRationale,
+      targetTimeHorizonDays,
+      targetProfitGoalPct,
     };
   }
 }

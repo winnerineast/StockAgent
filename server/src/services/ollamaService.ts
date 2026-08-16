@@ -39,6 +39,18 @@ export interface OllamaStatus {
   message: string;
 }
 
+export interface RawOllamaModelInfo {
+  name: string;
+  size?: number;
+  details?: {
+    family?: string;
+    families?: string[];
+    parameter_size?: string;
+    quantization_level?: string;
+    format?: string;
+  };
+}
+
 export interface OllamaDeductionResult {
   actions: ActionItem[];
   riskAlerts: RiskAlert[];
@@ -70,166 +82,201 @@ export class OllamaService {
     try {
       const output = execSync('nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits', {
         encoding: "utf-8",
-        timeout: 3000,
-      }).trim();
-      if (output) {
-        const parts = output.split(",");
-        if (parts.length >= 2) {
-          gpuName = parts[0].trim();
-          vramGb = Number((parseFloat(parts[1].trim()) / 1024).toFixed(1));
-        }
+        timeout: 2000,
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+      const lines = output.trim().split("\n");
+      if (lines.length > 0 && lines[0].trim()) {
+        const parts = lines[0].split(",");
+        gpuName = parts[0]?.trim() || "NVIDIA GPU";
+        vramGb = Number((parseFloat(parts[1]?.trim() || "0") / 1024).toFixed(1));
       }
-    } catch (e) {
-      try {
-        const psOut = execSync('powershell -Command "(Get-CimInstance Win32_VideoController | Select-Object -First 1).Name"', {
-          encoding: "utf-8",
-          timeout: 3000,
-        }).trim();
-        if (psOut) gpuName = psOut;
-      } catch (e2) {}
+    } catch {
+      const cpus = os.cpus();
+      if (cpus && cpus.length > 0) {
+        gpuName = `CPU Inference (${cpus[0].model.trim()})`;
+      }
     }
 
     const summary = vramGb > 0
-      ? `💻 ${totalRamGb}GB RAM | ${gpuName} (${vramGb}GB VRAM)`
-      : `💻 ${totalRamGb}GB RAM | ${cpuCores} 核 CPU`;
+      ? `${gpuName} (${vramGb}GB 显存) + ${totalRamGb}GB 内存 (${cpuCores}核)`
+      : `${totalRamGb}GB 内存 + ${gpuName} (${cpuCores}核)`;
 
-    this.cachedHardwareInfo = { totalRamGb, gpuName, vramGb, cpuCores, summary };
+    this.cachedHardwareInfo = {
+      totalRamGb,
+      gpuName,
+      vramGb,
+      cpuCores,
+      summary,
+    };
     return this.cachedHardwareInfo;
   }
 
-  public rankModelsForHardware(installedModels: string[], hardware: HardwareInfo): {
-    recommendedModel: string;
-    modelRecommendations: ModelRecommendation[];
-  } {
-    if (installedModels.length === 0) {
-      return { recommendedModel: "", modelRecommendations: [] };
+  public evaluateModel(modelName: string, hardware: HardwareInfo): ModelRecommendation {
+    const lower = modelName.toLowerCase();
+    let score = 50;
+    let reason = "通用开源大模型";
+    let paramSize = "标准";
+
+    // 0. 排除文本嵌入与向量模型 (Embedding / Reranker 模型不具备文本生成与推演能力)
+    if (
+      lower.includes("embed") ||
+      lower.includes("bge") ||
+      lower.includes("nomic") ||
+      lower.includes("rerank")
+    ) {
+      return {
+        name: modelName,
+        score: 0,
+        isRecommended: false,
+        reason: "文本嵌入/向量模型，非策略生成大模型",
+        parameterSize: "Embedding",
+      };
     }
 
-    const vram = hardware.vramGb || 0;
-    const maxMemoryCapacityGb = vram > 0 ? vram : hardware.totalRamGb * 0.6;
+    // 1. Qwen / 通义千问系列 (支持精确识别 qwen3.8 / qwen3.6 / qwen2.5 及 72b / 32b / 27b / 14b / 8b / 7b)
+    if (lower.includes("qwen") || lower.includes("千问")) {
+      // 提取代际版本号 (如 qwen3.8 -> 3.8, qwen3.6 -> 3.6, qwen2.5 -> 2.5)
+      const verMatch = lower.match(/qwen(\d+(?:\.\d+)?)/i);
+      const versionNum = verMatch ? parseFloat(verMatch[1]) : 2.5;
 
-    const recommendations: ModelRecommendation[] = installedModels.map((m) => {
-      const lower = m.toLowerCase();
-      let score = 50;
-      let reason = "通用大语言模型";
-      let parameterSize = "标准参数";
+      // 提取参数量 (如 72b, 32b, 30b, 27b, 14b, 8b, 7b, 4b, 1.5b)
+      const sizeMatch = lower.match(/(\d+(?:\.\d+)?)[bB]/);
+      const sizeNum = sizeMatch ? parseFloat(sizeMatch[1]) : 0;
+      paramSize = sizeNum > 0 ? `${sizeNum}B` : "旗舰基座";
 
-      if (lower.includes("qwen3.6") || lower.includes("qwen2.5:32b") || lower.includes("qwen2.5:72b")) {
-        score = 98;
-        reason = "针对中英金融与结构化 JSON 强对齐的最强推理模型";
-        parameterSize = "27B/32B 大参数";
-      } else if (lower.includes("qwen") || lower.includes("deepseek")) {
-        score = 94;
-        reason = "优秀的代码与金融逻辑推演大模型";
-        parameterSize = "14B/32B";
-      } else if (lower.includes("gemma4:12b") || lower.includes("gemma2:27b")) {
-        score = 93;
-        reason = "Google Gemma 官方通用推理旗舰模型";
-        parameterSize = "12B/27B";
-      } else if (lower.includes("muse-glimmer-30b")) {
-        score = 91;
-        reason = "大参数多任务复杂逻辑推理模型";
-        parameterSize = "30B 大参数";
-      } else if (lower.includes("sensenova")) {
-        score = 86;
-        reason = "高速响应平衡型 8B 模型";
-        parameterSize = "8B";
-      } else if (lower.includes("gemma4:e4b") || lower.includes("e4b")) {
+      // 基础代际得分 (最新强大代际: 3.8 > 3.6 > 3.0 > 2.5)
+      let baseScore = 82;
+      if (versionNum >= 3.8) {
+        baseScore = 98;
+        reason = "最新通义千问 3.8 旗舰大模型，逻辑推理与金融盘面推演能力顶尖";
+      } else if (versionNum >= 3.6) {
+        baseScore = 92;
+        reason = "千问 3.6 代际模型，具备扎实的多因子量化决策能力";
+      } else if (versionNum >= 3.0) {
+        baseScore = 88;
+        reason = "千问 3 代大模型，性能优良";
+      } else if (versionNum >= 2.5) {
+        baseScore = 85;
+        reason = "千问 2.5 经典稳定基座";
+      }
+
+      // 结合 24GB 显存 (RTX 4090) 硬件适配加成
+      if (hardware.vramGb && hardware.vramGb >= 24) {
+        if (sizeNum >= 27 && sizeNum <= 34) {
+          baseScore += 2;
+          reason += " (24GB 显存黄金适配)";
+        }
+      }
+
+      score = Math.min(99, baseScore);
+    }
+    // 2. DeepSeek 系列 (深度逻辑与金融推演)
+    else if (lower.includes("deepseek")) {
+      paramSize = "Reasoning/MoE";
+      score = 96;
+      reason = "深度推理与逻辑归因能力极强，金融推演优选";
+    }
+    // 3. Google Gemma 系列
+    else if (lower.includes("gemma")) {
+      const sizeMatch = lower.match(/(\d+(?:\.\d+)?)[bB]/);
+      paramSize = sizeMatch ? `${sizeMatch[1]}B` : "Gemma";
+      score = lower.includes("gemma4") || lower.includes("gemma-4") ? 93 : 88;
+      reason = "Google 优质开源基座，时序与语义理解优秀";
+    }
+    // 4. Meta Llama 3 系列
+    else if (lower.includes("llama3") || lower.includes("llama-3")) {
+      const sizeMatch = lower.match(/(\d+(?:\.\d+)?)[bB]/);
+      paramSize = sizeMatch ? `${sizeMatch[1]}B` : "Llama3";
+      score = 90;
+      reason = "Meta 顶尖基座，泛化与决策能力稳定";
+    }
+    // 5. 其他大模型 (Muse, SenseNova 等)
+    else {
+      const sizeMatch = lower.match(/(\d+(?:\.\d+)?)[bB]/);
+      const sizeNum = sizeMatch ? parseFloat(sizeMatch[1]) : 0;
+      paramSize = sizeNum > 0 ? `${sizeNum}B` : "通用";
+      if (sizeNum >= 27 && hardware.vramGb && hardware.vramGb >= 24) {
+        score = 88;
+        reason = "大参数开源模型，显存适配良好";
+      } else {
         score = 75;
-        reason = "极速轻量款模型";
-        parameterSize = "4B";
-      } else if (lower.includes("embed")) {
-        score = 10;
-        reason = "Embedding 向量模型 (非生成式 LLM)";
-        parameterSize = "Vector";
+        reason = "通用开源大模型";
       }
-
-      if (maxMemoryCapacityGb < 12 && (lower.includes("30b") || lower.includes("32b") || lower.includes("70b"))) {
-        score -= 25;
-        reason += " (硬件显存较吃紧)";
-      }
-
-      return {
-        name: m,
-        score,
-        isRecommended: false,
-        reason,
-        parameterSize,
-      };
-    });
-
-    recommendations.sort((a, b) => b.score - a.score);
-
-    const best = recommendations[0];
-    if (best) best.isRecommended = true;
+    }
 
     return {
-      recommendedModel: best ? best.name : installedModels[0],
-      modelRecommendations: recommendations,
+      name: modelName,
+      score,
+      isRecommended: false,
+      reason,
+      parameterSize: paramSize,
     };
   }
 
   public async getStatus(): Promise<OllamaStatus> {
-    const ollamaUrl = this.baseUrl;
     const hardware = this.detectHardware();
-
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      const resp = await fetch(`${this.baseUrl}/api/tags`, {
+        signal: AbortSignal.timeout(2500),
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
-      const resp = await fetch(`${ollamaUrl}/api/tags`, { signal: controller.signal });
-      clearTimeout(timeoutId);
+      const data: any = await resp.json();
+      const rawModels: RawOllamaModelInfo[] = data.models || [];
+      const modelNames = rawModels.map((m) => m.name);
 
-      if (resp.ok) {
-        const data: any = await resp.json();
-        const models = Array.isArray(data?.models) ? data.models.map((m: any) => m.name) : [];
-        const { recommendedModel, modelRecommendations } = this.rankModelsForHardware(models, hardware);
+      const evaluated = modelNames.map((name) => this.evaluateModel(name, hardware));
+      evaluated.sort((a, b) => b.score - a.score);
 
-        return {
-          connected: true,
-          ollamaUrl,
-          models,
-          recommendedModel,
-          hardware,
-          modelRecommendations,
-          message: `🟢 Ollama 已连通 (${hardware.summary})，推荐首选模型: ${recommendedModel}`,
-        };
+      let recommendedModel = "";
+      if (evaluated.length > 0) {
+        evaluated[0].isRecommended = true;
+        recommendedModel = evaluated[0].name;
       }
-    } catch (err: any) {}
 
-    return {
-      connected: false,
-      ollamaUrl,
-      models: [],
-      recommendedModel: "",
-      hardware,
-      modelRecommendations: [],
-      message: `🔴 未检测到 Ollama 服务 (${ollamaUrl})`,
-    };
+      return {
+        connected: true,
+        ollamaUrl: this.baseUrl,
+        models: modelNames,
+        recommendedModel,
+        hardware,
+        modelRecommendations: evaluated,
+        message: modelNames.length > 0
+          ? `🟢 Ollama 在线 (已加载 ${modelNames.length} 个模型)`
+          : `🟡 Ollama 在线但未安装任何模型`,
+      };
+    } catch {
+      return {
+        connected: false,
+        ollamaUrl: this.baseUrl,
+        models: [],
+        recommendedModel: "",
+        hardware,
+        modelRecommendations: [],
+        message: `🔴 Ollama 未运行 (无法连接 ${this.baseUrl})`,
+      };
+    }
   }
 
-  /**
-   * Stage A Chunk: 独立推演大盘宏观与明星热门板块
-   */
   public async generateMacroSummaryWithOllama(
     modelName: string,
     searxngNewsText: string
   ): Promise<string> {
-    const prompt = `请作为专业美股量化宏观分析师，根据以下从 SearXNG 抓取到的最新美股全网盘前资讯，简短总结今日美股大盘走向、主要市场情绪与明星热门板块。
+    const prompt = `你是一名华尔街顶级宏观策略首席分析师与美股基金经理。
+请基于以下最新实时宏观新闻与资讯，提炼一段精炼、富有洞察力的美股盘前宏观走势综述 (约 150-250 字)。
+说明当前市场主线、流动性预期、主要风险偏好及对仓位防守/进攻的指引。
 
-========================================
-全网盘前资讯:
-${searxngNewsText || "盘前资讯暂未检索到显著异常，维持平稳动向。"}
+【实时宏观资讯】:
+${searxngNewsText || "暂无最新全球宏观突发新闻"}
 
-========================================
-输出要求:
-输出一段不超过 200 字的精炼宏观大盘与热门板块总结。`;
+请直接输出综述正文，不要包含多余问候或 markdown 标题：`;
 
     try {
       const resp = await fetch(`${this.baseUrl}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(20000),
         body: JSON.stringify({
           model: modelName,
           messages: [{ role: "user", content: prompt }],
@@ -239,18 +286,18 @@ ${searxngNewsText || "盘前资讯暂未检索到显著异常，维持平稳动�
 
       if (resp.ok) {
         const resData: any = await resp.json();
-        const content = resData?.message?.content;
-        if (content) return content.trim();
+        const output = resData?.message?.content?.trim();
+        if (output) return output;
       }
-    } catch (e) {}
+    } catch (e) {
+      console.warn(`[Ollama Macro Summary] Inference timeout or error: ${e}`);
+    }
 
-    return searxngNewsText ? searxngNewsText.slice(0, 180) : "美股盘前大盘走势分化，建议重点关注基本面与催化消息。";
+    return searxngNewsText
+      ? searxngNewsText.slice(0, 180)
+      : "美股盘前大盘走势分化，建议重点关注基本面与催化消息，控制回撤。";
   }
 
-  /**
-   * Stage B Map Chunk: 针对单只候选股票做分段小 Context 推理 (含盘面、基本面、消息、情绪、大资金与衰减图谱)
-   * 纯动态构造，零硬编码示例
-   */
   public async deduceSingleStockWithOllama(
     modelName: string,
     stockData: {
@@ -268,6 +315,10 @@ ${searxngNewsText || "盘前资讯暂未检索到显著异常，维持平稳动�
       strategyCategoryReason?: string;
       timefmForecast?: TimeFmForecastItem;
       verifiedPromptHistory?: string;
+      targetProfitGoalPct?: number;
+      targetTimeHorizonDays?: number;
+      maxDrawdownPct?: number;
+      userBudget?: number;
     }
   ): Promise<ActionItem | null> {
     const s = stockData.symbol;
@@ -284,6 +335,11 @@ ${searxngNewsText || "盘前资讯暂未检索到显著异常，维持平稳动�
     const categoryInfo = stockData.strategyCategoryLabel
       ? `${stockData.strategyCategoryLabel}: ${stockData.strategyCategoryReason || ""}`
       : "全美股精选标的";
+
+    const targetT = stockData.targetTimeHorizonDays || 5;
+    const targetG = stockData.targetProfitGoalPct || 8.0;
+    const maxD = stockData.maxDrawdownPct || 4.0;
+    const userBudget = stockData.userBudget || 2000.0;
 
     const posInfoText = pos && pos.shares > 0
       ? `目前持仓 ${pos.shares} 股，成本价 $${pos.costBasis.toFixed(2)}，浮动盈亏 ${(((curP - pos.costBasis) / pos.costBasis) * 100).toFixed(1)}%`
@@ -306,7 +362,14 @@ ${searxngNewsText || "盘前资讯暂未检索到显著异常，维持平稳动�
     const spilloverAlpha = kg ? (kg.spilloverAlphaScore ?? graphQuantitativeEngine.calculateSpilloverAlpha(kg)) : 0;
     const networkRisk = kg ? (kg.networkRiskScore ?? graphQuantitativeEngine.calculateNetworkRisk(kg)) : 30;
 
-    const prompt = `分析美股标的 [${s}] (${cName}) 的全要素数据，结合策略分类归属、产业链上下游拓扑、Google TimeFM 时序预测与今日宏观大盘约束，评估操作方向与逻辑论据。
+    const prompt = `分析美股标的 [${s}] (${cName}) 的全要素数据。
+我们计算的目的不是为了处理海量信息而堆砌信息，而是消除迷茫的程度，在严格成本与时间限制下，把走势确定性算准。
+
+【用户刚性目标与资金约束】:
+- 手头可调用资金空间: $${userBudget.toFixed(0)}
+- 限定交易日时间跨度: ${targetT} 个交易日
+- 预期盈利目标: +${targetG.toFixed(1)}%
+- 最大风险回撤红线: -${maxD.toFixed(1)}%
 
 【策略分类归属】:
 ${categoryInfo}
@@ -339,7 +402,7 @@ ${verifiedMemories}
   "action": "BUY" | "TRIM" | "HOLD" | "SELL",
   "symbol": "${s}",
   "companyName": "${cName}",
-  "rationale": "详细操作逻辑说明 (结合产业链因果传导、TimeFM时序预测与实盘历史经验归因)",
+  "rationale": "消除迷茫的核心确定性逻辑 (论证为何能在限定 ${targetT} 日内达成 +${targetG}% 目标，明确挂单区间与 ${targetT} 日时间止损纪律)",
   "urgency": "HIGH" | "MEDIUM" | "LOW"
 }`;
 
@@ -362,7 +425,7 @@ ${verifiedMemories}
         let jsonParsed: any = null;
         try {
           jsonParsed = JSON.parse(contentText);
-        } catch (e) {
+        } catch {
           const match = contentText.match(/\{[\s\S]*\}/);
           if (match) jsonParsed = JSON.parse(match[0]);
         }
@@ -375,33 +438,38 @@ ${verifiedMemories}
             suggestedShares: Number(jsonParsed.suggestedShares || 10),
             estimatedPrice: curP,
             estimatedAmount: Number((10 * curP).toFixed(2)),
-            rationale: jsonParsed.rationale || `基于 [${s}] 盘面现价 $${curP}、产业链拓扑与策略归属 (${categoryInfo}) 推演`,
+            rationale: jsonParsed.rationale || `基于 [${s}] 盘面现价 $${curP}、产业链拓扑与策略归属 (${categoryInfo}) 消除迷茫度推演`,
             urgency: jsonParsed.urgency || "MEDIUM",
-            targetPrice: 0,
-            stopLossPrice: 0,
+            targetPrice: Number((curP * (1 + targetG / 100)).toFixed(2)),
+            stopLossPrice: Number((curP * (1 - maxD / 100)).toFixed(2)),
             riskRewardRatio: 2.0,
             strategyCategory: stockData.strategyCategory,
             strategyCategoryLabel: stockData.strategyCategoryLabel,
             strategyCategoryReason: stockData.strategyCategoryReason,
+            targetTimeHorizonDays: targetT,
+            targetProfitGoalPct: targetG,
           };
 
-          // 通过数学风控与 ATR 波幅严格对齐解算目标价、止损价与持仓股数
           return quantRiskManager.alignActionWithQuantRisk(
             rawAction,
             curP,
             spilloverAlpha,
-            networkRisk
+            networkRisk,
+            userBudget,
+            userBudget,
+            targetG,
+            targetT,
+            maxD
           );
         }
       }
-    } catch (e) {}
+    } catch (e) {
+      console.warn(`[Ollama Deduce Stock] Error for ${s}: ${e}`);
+    }
 
     return null;
   }
 
-  /**
-   * Stage C Master Fusion: 汇总分段 Map-Reduce 结果生成完整推演结果
-   */
   public async generateStrategyWithOllama(
     modelName: string,
     context: {
@@ -419,6 +487,9 @@ ${verifiedMemories}
       riskPreference: string;
       timefmForecasts?: Record<string, TimeFmForecastItem>;
       stockVerifiedHistories?: Record<string, string>;
+      targetProfitGoalPct?: number;
+      targetTimeHorizonDays?: number;
+      maxDrawdownPct?: number;
     }
   ): Promise<OllamaDeductionResult> {
     const status = await this.getStatus();
@@ -427,11 +498,14 @@ ${verifiedMemories}
     }
 
     const selectedModel = status.models.includes(modelName) ? modelName : status.recommendedModel || status.models[0];
+    const targetT = context.targetTimeHorizonDays || 5;
+    const targetG = context.targetProfitGoalPct || 8.0;
+    const maxD = context.maxDrawdownPct || 4.0;
 
     // Stage A: 宏观 Chunk 推理
     const macroOverview = await this.generateMacroSummaryWithOllama(selectedModel, context.searxngNewsText);
 
-    // Stage B: 候选股票 Map Chunk 并发分段推理 (注入宏观约束、TimeFM预测与实盘经验库)
+    // Stage B: 候选股票 Map Chunk 并发分段推理 (注入目标驱动、TimeFM预测与实盘经验库)
     const inferencePromises = context.candidateSymbols.map(async (sym) => {
       const pos = context.positions.find((p) => p.symbol.toUpperCase() === sym.toUpperCase());
       const curP =
@@ -440,16 +514,17 @@ ${verifiedMemories}
         pos?.costBasis ||
         0;
 
-      const intel = context.candidateStockIntels.get(sym.toUpperCase()) || {
+      const intel: SingleStockIntel = context.candidateStockIntels.get(sym.toUpperCase()) || {
         symbol: sym,
         latestNews: [],
-        communitySentiment: { mood: "UNKNOWN", keyTopics: [] },
-        capitalFlow: { trend: "NEUTRAL", description: "未知" },
+        communitySentiment: { mood: "NEUTRAL", keyTopics: [] },
+        capitalFlow: { trend: "NEUTRAL", description: "资金动向未知" },
       };
-      const kg = context.knowledgeGraphs.find((k) => k.symbol.toUpperCase() === sym.toUpperCase());
+
+      const kg = context.knowledgeGraphs.find((g) => g.symbol.toUpperCase() === sym.toUpperCase());
       const catMeta = context.candidateCategoryMap?.get(sym.toUpperCase());
-      const tfm = context.timefmForecasts ? context.timefmForecasts[sym.toUpperCase()] : undefined;
-      const verifiedHistory = context.stockVerifiedHistories ? context.stockVerifiedHistories[sym.toUpperCase()] : undefined;
+      const tfm = context.timefmForecasts?.[sym.toUpperCase()];
+      const verifiedHistory = context.stockVerifiedHistories?.[sym.toUpperCase()];
 
       const itemRes = await this.deduceSingleStockWithOllama(selectedModel, {
         symbol: sym,
@@ -458,6 +533,7 @@ ${verifiedMemories}
         holdingPosition: pos,
         intel,
         knowledgeGraph: kg,
+        fundamentals: intel.fundamentals,
         lessonsLearned: context.lessonsLearned,
         macroPromptContext: context.macroPromptContext,
         strategyCategory: catMeta?.category,
@@ -465,38 +541,49 @@ ${verifiedMemories}
         strategyCategoryReason: catMeta?.reason,
         timefmForecast: tfm,
         verifiedPromptHistory: verifiedHistory,
+        targetProfitGoalPct: targetG,
+        targetTimeHorizonDays: targetT,
+        maxDrawdownPct: maxD,
+        userBudget: context.totalBudget,
       });
 
       if (itemRes) {
         return itemRes;
       }
 
-      // Fallback rule-based recommendation
+      // Fallback
       const isHolding = pos && pos.shares > 0;
-      const pnlPct = pos && pos.costBasis > 0 ? ((curP - pos.costBasis) / pos.costBasis) * 100 : 0;
-      let actionType: "BUY" | "TRIM" | "HOLD" = "HOLD";
+      let actionType: "BUY" | "TRIM" | "HOLD" | "SELL" = "HOLD";
       let shares = 0;
-      let rationale = `[${sym}] 现价 $${curP.toFixed(2)}，多维指标处于中性区间，维持观望`;
+      let rationale = "";
 
-      if (catMeta?.category === "OVERSOLD_BUY" || catMeta?.category === "CAPITAL_INFLOW_BUY" || catMeta?.category === "FUNDAMENTAL_BUY" || catMeta?.category === "NEWS_CATALYST_BUY") {
+      if (catMeta?.category === "OVERSOLD_BUY") {
         actionType = "BUY";
-        shares = curP > 0 ? Math.max(1, Math.floor(Math.min(context.totalBudget * 0.35, 1000) / curP)) : 0;
-        rationale = `[${sym}] 触发 ${catMeta.label} 信号 (${catMeta.reason})，建议在现价 $${curP.toFixed(2)} 建仓 ${shares} 股。`;
-      } else if (isHolding && pnlPct >= 18.0) {
-        actionType = "TRIM";
-        shares = Math.max(1, Math.floor(pos.shares * 0.35));
-        rationale = `[${sym}] 累计浮盈 +${pnlPct.toFixed(1)}%，建议减仓 ${shares} 股锁定收益`;
-      } else if (isHolding && pnlPct <= -8.0) {
-        actionType = "TRIM";
-        shares = Math.max(1, Math.floor(pos.shares * 0.5));
-        rationale = `[${sym}] 触发 -8.0% 止损纪律，建议减仓 ${shares} 股规避下行风险`;
+        shares = curP > 0 ? Math.max(1, Math.floor((context.totalBudget * 0.3) / curP)) : 10;
+        rationale = `[${sym}] 触发 52 周底部超跌多因子信号，在限定 ${targetT} 交易日内具备均值回归修复动能。`;
+      } else if (catMeta?.category === "FUNDAMENTAL_BUY") {
+        actionType = "BUY";
+        shares = curP > 0 ? Math.max(1, Math.floor((context.totalBudget * 0.3) / curP)) : 10;
+        rationale = `[${sym}] 核心财报与盈利质量强劲，契合中线目标。`;
+      } else if (catMeta?.category === "NEWS_CATALYST_BUY") {
+        actionType = "BUY";
+        shares = curP > 0 ? Math.max(1, Math.floor((context.totalBudget * 0.25) / curP)) : 10;
+        rationale = `[${sym}] 行业利好催化共振，适量介入博取短期弹性。`;
+      } else if (catMeta?.category === "CAPITAL_INFLOW_BUY") {
+        actionType = "BUY";
+        shares = curP > 0 ? Math.max(1, Math.floor((context.totalBudget * 0.35) / curP)) : 10;
+        rationale = `[${sym}] 盘面大资金逆势净流入，顺应资金主线建仓。`;
       } else if (isHolding) {
         actionType = "HOLD";
         shares = pos.shares;
-        rationale = `[${sym}] 持仓运行健康，建议维持现有底仓`;
+        rationale = `[${sym}] 持仓运行健康，建议维持现有底仓并设定 ${targetT} 日时间止损纪律。`;
+      } else {
+        actionType = "HOLD";
+        shares = 0;
+        rationale = `[${sym}] 当前多空信号分歧，列入观察池保持跟踪。`;
       }
 
-      const urgency: "HIGH" | "MEDIUM" | "LOW" = actionType === "TRIM" || actionType === "BUY" ? "HIGH" : "LOW";
+      const urgency: "HIGH" | "MEDIUM" | "LOW" = actionType === "BUY" ? "HIGH" : "LOW";
 
       const fallbackItem: ActionItem = {
         action: actionType,
@@ -507,14 +594,16 @@ ${verifiedMemories}
         estimatedAmount: Number((shares * curP).toFixed(2)),
         rationale,
         urgency,
-        targetPrice: Number((curP * 1.15).toFixed(2)),
-        stopLossPrice: Number((curP * 0.92).toFixed(2)),
+        targetPrice: Number((curP * (1 + targetG / 100)).toFixed(2)),
+        stopLossPrice: Number((curP * (1 - maxD / 100)).toFixed(2)),
         riskRewardRatio: 2.2,
         strategyCategory: catMeta?.category,
         strategyCategoryLabel: catMeta?.label,
         strategyCategoryReason: catMeta?.reason,
         isOversoldOpportunity: catMeta?.category === "OVERSOLD_BUY",
         oversoldReason: catMeta?.reason,
+        targetTimeHorizonDays: targetT,
+        targetProfitGoalPct: targetG,
       };
       return fallbackItem;
     });

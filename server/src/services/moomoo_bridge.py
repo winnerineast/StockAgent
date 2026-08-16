@@ -6,12 +6,14 @@ import argparse
 sys.stdout.reconfigure(encoding='utf-8')
 
 def output_json(obj):
-    print("__JSON_START__" + json.dumps(obj, ensure_ascii=False) + "__JSON_END__")
+    print("__JSON_START__" + json.dumps(obj, ensure_ascii=False) + "__JSON_END__", flush=True)
+    sys.stdout.flush()
 
 def parse_args():
     parser = argparse.ArgumentParser(description="MooMoo OpenD Python Bridge")
-    parser.add_argument("--action", type=str, default="portfolio", choices=["portfolio", "watchlist", "snapshots", "capital_flow", "market_universe", "full_scan", "macro_sectors", "timefm_forecast"])
+    parser.add_argument("--action", type=str, default="portfolio", choices=["portfolio", "watchlist", "snapshots", "capital_flow", "market_universe", "full_scan", "macro_sectors", "timefm_forecast", "unlock", "check_unlock"])
     parser.add_argument("--symbols", type=str, default="")
+    parser.add_argument("--password", type=str, default="")
     return parser.parse_args()
 
 def run_portfolio():
@@ -493,6 +495,61 @@ def run_timefm_forecast(symbols_str: str):
         'forecasts': forecasts
     })
 
+def run_unlock(pwd_str: str):
+    import hashlib
+    if not pwd_str or not pwd_str.strip():
+        output_json({'success': False, 'message': '交易密码不能为空'})
+        return
+
+    clean_pwd = pwd_str.strip()
+    if len(clean_pwd) == 32 and all(c in '0123456789abcdefABCDEF' for c in clean_pwd):
+        pwd_md5 = clean_pwd.lower()
+    else:
+        pwd_md5 = hashlib.md5(clean_pwd.encode('utf-8')).hexdigest()
+
+    try:
+        from moomoo import OpenSecTradeContext, TrdMarket, SecurityFirm
+        ctx = OpenSecTradeContext(host='127.0.0.1', port=11111, filter_trdmarket=TrdMarket.US, security_firm=SecurityFirm.FUTUSG)
+        ret, data = ctx.unlock_trade(password_md5=pwd_md5, is_unlock=True)
+        ctx.close()
+
+        if ret == 0:
+            output_json({
+                'success': True,
+                'message': 'MooMoo 交易密码解锁成功！已获得实盘交易与调仓权限'
+            })
+        else:
+            errMsg = str(data) if data else '交易密码验证失败，请核对后重试'
+            output_json({
+                'success': False,
+                'message': errMsg
+            })
+    except Exception as e:
+        output_json({
+            'success': False,
+            'message': f'连接 OpenD 异常: {str(e)}'
+        })
+
+def run_check_unlock():
+    try:
+        from moomoo import OpenSecTradeContext, TrdMarket, SecurityFirm, TrdEnv
+        ctx = OpenSecTradeContext(host='127.0.0.1', port=11111, filter_trdmarket=TrdMarket.US, security_firm=SecurityFirm.FUTUSG)
+        ret_order, _ = ctx.order_list_query(trd_env=TrdEnv.REAL)
+        ctx.close()
+
+        # OpenD 中如果实盘交易处于解锁状态，order_list_query 正常返回 0
+        is_unlocked = (ret_order == 0)
+        output_json({
+            'success': True,
+            'unlocked': is_unlocked
+        })
+    except Exception as e:
+        output_json({
+            'success': False,
+            'unlocked': False,
+            'error': str(e)
+        })
+
 if __name__ == "__main__":
     try:
         args = parse_args()
@@ -510,6 +567,10 @@ if __name__ == "__main__":
             run_macro_sectors()
         elif args.action == "timefm_forecast":
             run_timefm_forecast(args.symbols)
+        elif args.action == "unlock":
+            run_unlock(args.password)
+        elif args.action == "check_unlock":
+            run_check_unlock()
         else:
             run_portfolio()
     except Exception as e:
@@ -517,3 +578,7 @@ if __name__ == "__main__":
             'success': False,
             'error': str(e)
         })
+    finally:
+        # 强制退出，避免 OpenD 底层异步心跳守护线程导致 Python 进程无法及时退出
+        import os
+        os._exit(0)

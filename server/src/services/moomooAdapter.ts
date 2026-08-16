@@ -102,7 +102,6 @@ export class MooMooAdapter {
     try {
       const realData = await this.queryRealProtobufPortfolio();
       if (realData) {
-        this.isTradeUnlocked = true;
         return {
           cashBalance: realData.cashBalance,
           positions: realData.positions,
@@ -134,7 +133,6 @@ export class MooMooAdapter {
         try {
           const data = extractJsonFromBridgeOutput(stdout);
           if (data && data.success && Array.isArray(data.positions)) {
-            this.isTradeUnlocked = true;
             return resolve({
               cashBalance: data.detectedCash !== undefined ? data.detectedCash : 0.0,
               positions: data.positions.map((p: any) => ({
@@ -152,6 +150,8 @@ export class MooMooAdapter {
     });
   }
 
+  private lastUnlockCheckTime: number = 0;
+
   public async checkTradeUnlockedStatus(): Promise<{ unlocked: boolean }> {
     const isAlive = await openDaemonManager.checkOpenDAlive();
     if (!isAlive) {
@@ -159,17 +159,33 @@ export class MooMooAdapter {
       return { unlocked: false };
     }
 
-    // 动态探测：如果当前未标记解锁，主动尝试通过原生 Python 桥接探测 OpenD 交易权限
-    if (!this.isTradeUnlocked) {
-      try {
-        const testRealData = await this.queryRealProtobufPortfolio();
-        if (testRealData) {
-          this.isTradeUnlocked = true;
-        }
-      } catch (e) {}
+    // 1. 核心持久化优化：一旦解锁成功，只要 OpenD 网关在线，默认维持解锁状态，零后台进程消耗
+    if (this.isTradeUnlocked) {
+      return { unlocked: true };
     }
 
-    return { unlocked: this.isTradeUnlocked };
+    // 2. 仅在未解锁状态下进行低频探针探测 (至少间隔 10 秒)，探测用户是否在 OpenD 客户端界面右上角完成了解锁
+    const now = Date.now();
+    if (now - this.lastUnlockCheckTime < 10000) {
+      return { unlocked: false };
+    }
+    this.lastUnlockCheckTime = now;
+
+    const bridgeScript = getMoomooBridgeScriptPath();
+    return new Promise((resolve) => {
+      exec(`python "${bridgeScript}" --action check_unlock`, { encoding: "utf-8", timeout: 3500 }, (_err: any, stdout: string) => {
+        try {
+          const data = extractJsonFromBridgeOutput(stdout);
+          if (data && data.success && data.unlocked) {
+            this.isTradeUnlocked = true;
+            return resolve({ unlocked: true });
+          }
+        } catch (e) {}
+
+        this.isTradeUnlocked = false;
+        resolve({ unlocked: false });
+      });
+    });
   }
 
   public async unlockTrade(passwordMD5: string): Promise<{ success: boolean; message: string }> {
@@ -178,59 +194,24 @@ export class MooMooAdapter {
       return { success: false, message: "请输入有效的交易密码" };
     }
 
+    const bridgeScript = getMoomooBridgeScriptPath();
+    const cleanPwd = passwordMD5.trim().replace(/"/g, '\\"');
+
     return new Promise((resolve) => {
-      let isSettled = false;
-      const safeDone = (res: { success: boolean; message: string }) => {
-        if (!isSettled) {
-          isSettled = true;
-          try { client.destroy(); } catch (e) {}
-          resolve(res);
-        }
-      };
-
-      const timeout = setTimeout(() => {
-        this.isTradeUnlocked = false;
-        safeDone({ success: false, message: "OpenD 解锁指令响应超时" });
-      }, 5000);
-
-      const client = new net.Socket();
-      let stage = 1;
-
-      client.connect(OPEND_PORT, OPEND_HOST, () => {
-        client.write(makeOpenDPacket(1001, { c2s: { clientVer: 100, clientID: "StockAgent", recvNotify: true } }, 1));
-      });
-
-      client.on("data", (data) => {
+      exec(`python "${bridgeScript}" --action unlock --password "${cleanPwd}"`, { encoding: "utf-8", timeout: 8000 }, (_err: any, stdout: string) => {
         try {
-          if (data.length < 44) return;
-          const bodyStr = data.slice(44).toString();
-          const resObj = JSON.parse(bodyStr);
-
-          if (stage === 1) {
-            stage = 2;
-            client.write(makeOpenDPacket(2005, { c2s: { unlock: true, pwdMD5: passwordMD5, securityFirm: 3 } }, 2));
-          } else if (stage === 2) {
-            clearTimeout(timeout);
-            if (resObj?.retType === 0) {
-              this.isTradeUnlocked = true;
-              safeDone({ success: true, message: "交易密码解锁成功！已获得持仓与交易权限" });
-            } else {
-              const msg = resObj?.retMsg || "交易密码解锁完成";
-              this.isTradeUnlocked = true;
-              safeDone({ success: true, message: msg });
-            }
+          const data = extractJsonFromBridgeOutput(stdout);
+          if (data && data.success) {
+            this.isTradeUnlocked = true;
+            return resolve({ success: true, message: data.message || "MooMoo 交易密码验证成功！交易权限已解锁" });
+          } else if (data) {
+            this.isTradeUnlocked = false;
+            return resolve({ success: false, message: data.message || "交易密码验证失败" });
           }
-        } catch (e: any) {
-          clearTimeout(timeout);
-          this.isTradeUnlocked = false;
-          safeDone({ success: false, message: e.message || "解锁解析异常" });
-        }
-      });
+        } catch (e) {}
 
-      client.on("error", (err) => {
-        clearTimeout(timeout);
         this.isTradeUnlocked = false;
-        safeDone({ success: false, message: `连接 OpenD 异常: ${err.message}` });
+        resolve({ success: false, message: "OpenD 交易密码解锁请求异常，请检查 OpenD 状态" });
       });
     });
   }

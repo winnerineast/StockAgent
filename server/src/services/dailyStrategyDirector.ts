@@ -6,6 +6,7 @@ import { stockKnowledgeGraphStoreService } from "./stockKnowledgeGraphStore";
 import { macroSnapshotStoreService } from "./macroSnapshotStore";
 import { StockEngine, stockEngine } from "./stockEngine";
 import { ollamaService } from "./ollamaService";
+import { goalDrivenQuantEngine } from "./goalDrivenQuantEngine";
 import { computeTotalPnL, computeRetroPnL, savePortfolioSnapshot } from "./stockMemoryManager";
 import { deductionVerificationService } from "./deductionVerificationService";
 import {
@@ -18,6 +19,8 @@ import {
   StockStrategyCategory,
   OpenDSnapshotItem,
   DeductionPipelineData,
+  CapitalSpaceAnalysis,
+  GoalDrivenConstraint,
 } from "../types/stockTypes";
 
 export class DailyStrategyDirector {
@@ -37,7 +40,10 @@ export class DailyStrategyDirector {
     portfolioId: string = "default-portfolio",
     customBudget?: number,
     ollamaModel?: string,
-    onProgress?: (stage: StrategyProgressStage) => void
+    onProgress?: (stage: StrategyProgressStage) => void,
+    targetProfitGoalPct: number = 8.0,
+    targetTimeHorizonDays: number = 5,
+    maxDrawdownPct: number = 4.0
   ): Promise<{
     strategyId: string;
     strategyDate: string;
@@ -260,7 +266,13 @@ export class DailyStrategyDirector {
         snap,
         undefined,
         pos,
-        budgetToUse * 0.35
+        budgetToUse * 0.35,
+        targetProfitGoalPct,
+        targetTimeHorizonDays,
+        maxDrawdownPct,
+        undefined,
+        undefined,
+        macroRes.macroIntel.sentimentMood
       );
 
       // 仅当符合 5 大分类之一时才入选候选推演列表，否则略过
@@ -522,6 +534,31 @@ export class DailyStrategyDirector {
       deductionPipeline.rawOllamaOutput = JSON.stringify(screenerRes, null, 2);
     }
 
+    // 计算全局资金空间分析 (结合实盘持仓、闲置现金、宏观安全垫与调仓释放)
+    const capitalSpace = goalDrivenQuantEngine.calculateCapitalSpace({
+      existingPositions: currentPositions,
+      actualCash: openDCash,
+      userInputBudget: customBudget,
+      freedCapitalFromTrims: 0,
+      macroRegimeMood: macroRes?.macroIntel?.sentimentMood || "NEUTRAL",
+    });
+
+    // 运行目标驱动与消除迷茫度组合分配优化器
+    const {
+      optimizedActions,
+      updatedCapitalSpace,
+      overallCertaintyScore,
+      overallGoalProbability,
+    } = goalDrivenQuantEngine.optimizePortfolioAllocation({
+      candidateActions: screenerRes.actions,
+      capitalSpace,
+      targetProfitGoalPct,
+      targetTimeHorizonDays,
+      maxDrawdownPct,
+    });
+
+    screenerRes.actions = optimizedActions;
+
     // 将推演建议动作绑回列表
     screenerRes.actions.forEach((act) => {
       const target = perStockDeductionRetroList.find((item) => item.symbol.toUpperCase() === act.symbol.toUpperCase());
@@ -573,14 +610,16 @@ export class DailyStrategyDirector {
           estimatedAmount: Number((shares * curPrice).toFixed(2)),
           rationale,
           urgency: autoAction === "TRIM" || autoAction === "BUY" ? "HIGH" : "LOW",
-          targetPrice: Number((curPrice * 1.15).toFixed(2)),
-          stopLossPrice: Number((curPrice * 0.92).toFixed(2)),
+          targetPrice: Number((curPrice * (1 + targetProfitGoalPct / 100)).toFixed(2)),
+          stopLossPrice: Number((curPrice * (1 - maxDrawdownPct / 100)).toFixed(2)),
           riskRewardRatio: 2.2,
           strategyCategory: item.strategyCategory,
           strategyCategoryLabel: item.strategyCategoryLabel,
           strategyCategoryReason: item.strategyCategoryReason,
           isOversoldOpportunity: item.strategyCategory === "OVERSOLD_BUY",
           oversoldReason: item.strategyCategoryReason,
+          targetTimeHorizonDays,
+          targetProfitGoalPct,
         };
 
         item.currentRecommendation = fallbackAct;
@@ -645,6 +684,13 @@ export class DailyStrategyDirector {
 
     const searxngCheck = await searxngSearchService.getStatus();
 
+    const goalConstraints: GoalDrivenConstraint = {
+      targetTimeHorizonDays,
+      targetProfitGoalPct,
+      maxDrawdownPct,
+      userDeployableBudget: budgetToUse,
+    };
+
     return {
       strategyId: strategyRecord.id,
       strategyDate: todayStr,
@@ -656,13 +702,17 @@ export class DailyStrategyDirector {
         marketOverview: screenerRes.marketOverview,
         macroIntel: macroRes.macroIntel,
         macroSnapshot: macroRes.macroIntel.macroSnapshot,
+        capitalSpace: updatedCapitalSpace,
+        goalConstraints,
+        overallCertaintyScore,
+        overallGoalProbability,
         existingPositionGuidance: macroRes.macroIntel.macroTradingStance.positionStrategy,
         newPositionGuidance: macroRes.macroIntel.macroTradingStance.bias,
         actions: screenerRes.actions,
         riskAlerts: screenerRes.riskAlerts,
         knowledgeGraph: knowledgeGraphList,
         perStockDeductionRetro: perStockDeductionRetroList,
-        narrativeReport: `### 操盘分析报告 (${todayStr})\n\n${macroRes.macroIntel.summaryHeadline}\n\n**宏观策略基调**: ${macroRes.macroIntel.macroTradingStance.bias}\n**仓位调控建议**: ${macroRes.macroIntel.macroTradingStance.positionStrategy}\n**风控预警防线**: ${macroRes.macroIntel.macroTradingStance.riskWarning}`,
+        narrativeReport: `### 操盘分析报告 (${todayStr})\n\n${macroRes.macroIntel.summaryHeadline}\n\n**宏观策略基调**: ${macroRes.macroIntel.macroTradingStance.bias}\n**仓位调控建议**: ${macroRes.macroIntel.macroTradingStance.positionStrategy}\n**风控预警防线**: ${macroRes.macroIntel.macroTradingStance.riskWarning}\n**资金空间与确定性**: 可用操盘空间 $${updatedCapitalSpace.totalDeployableCapacity}，组合目标达成期望概率 ${overallGoalProbability}% (确定性得分 ${overallCertaintyScore}/100)`,
       },
       retroPnL,
     };
