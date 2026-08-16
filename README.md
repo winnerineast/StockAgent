@@ -10,50 +10,50 @@
 
 ```mermaid
 flowchart TD
-    subgraph Preflight [Preflight Readiness Barrier]
-        P1[🔌 MooMoo OpenD: 11111]
-        P2[🔍 SearXNG Search: 8088]
-        P3[🤖 Local LLM: 11434]
-        P4[🔐 Trade Password Unlocked]
-        P1 & P2 & P3 & P4 -->|All 4 Ready| Barrier[🚀 Initiate Step 1 Pipeline]
+    subgraph Preflight ["Preflight Readiness Barrier"]
+        P1["🔌 MooMoo OpenD: 11111"]
+        P2["🔍 SearXNG Search: 8088"]
+        P3["🤖 Local LLM: 11434"]
+        P4["🔐 Trade Password Unlocked"]
+        P1 & P2 & P3 & P4 -->|All 4 Ready| Barrier["🚀 Initiate Step 1 Pipeline"]
     end
 
-    subgraph S1 [Step 1: OpenD Native Positions & Assets]
-        Barrier --> A[OpenD Native TCP Gateway 11111]
-        A -->|100% Real Data · Zero Mock| B[Live Positions + Cash Balance + Watchlist]
+    subgraph S1 ["Step 1: OpenD Native Positions & Assets"]
+        Barrier --> A["OpenD Native TCP Gateway 11111"]
+        A -->|100% Real Data · Zero Mock| B["Live Positions + Cash Balance + Watchlist"]
     end
 
-    subgraph S2 [Step 2: SearXNG Macro Intelligence & Sentiment]
-        B --> C[SearXNG Dual-channel Auto Wake-up 8088]
-        C -->|Targeted Harvesting| D[Bloomberg / CNBC / Reuters / WSJ Headlines]
-        D -->|Ollama Synthesis| E[Sentiment Score + Star Sectors + Trading Directives + Macro Prompt Context]
+    subgraph S2 ["Step 2: SearXNG Macro Intelligence & Sentiment"]
+        B --> C["SearXNG Dual-channel Auto Wake-up 8088"]
+        C -->|Targeted Harvesting| D["Bloomberg / CNBC / Reuters / WSJ Headlines"]
+        D -->|Ollama Synthesis| E["Sentiment Score + Star Sectors + Trading Directives + Macro Prompt Context"]
     end
 
-    subgraph S3 [Step 3: Multi-Factor 5-Strategy Sieve]
-        E --> F[US Universe 349 Sector Plates]
-        F --> G[Priority: 1. Holdings > 2. Watchlist > 3. US Universe]
-        G --> H[OpenD 52-W High/Low, PE, EPS, Net Profit, Turnover & Capital Inflows]
-        H --> I{Multi-Factor 5-Strategy Classification}
-        I -->|📉 Oversold Buy| J1[Drawdown >= 15% from 52-W High & Fair Valuation]
-        I -->|💎 Fundamental Buy| J2[OpenD PE <= 38 & Solid Profitability]
-        I -->|🚀 News Catalyst Buy| J3[Pre-market Gap or Bullish Catalyst Resonance]
-        I -->|🏦 Capital Inflow Buy| J4[OpenD Institutional Large-order Net Inflow]
-        I -->|👀 Watch & Wait| J5[Holding / Watchlist Box-range Bottoms]
-        I -->|Non-qualifying| J6[❌ Auto Skip]
-        J1 & J2 & J3 & J4 & J5 --> K[Screened Candidate Pool]
-        K -.->|Async Non-blocking| L[Create/Update Exclusive Knowledge Graphs]
+    subgraph S3 ["Step 3: Multi-Factor 5-Strategy Sieve"]
+        E --> F["US Universe 349 Sector Plates"]
+        F --> G["Priority: 1. Holdings > 2. Watchlist > 3. US Universe"]
+        G --> H["OpenD 52-W High/Low, PE, EPS, Net Profit, Turnover & Capital Inflows"]
+        H --> I{"Multi-Factor 5-Strategy Classification"}
+        I -->|📉 Oversold Buy| J1["Drawdown >= 15% from 52-W High & Fair Valuation"]
+        I -->|💎 Fundamental Buy| J2["OpenD PE <= 38 & Solid Profitability"]
+        I -->|🚀 News Catalyst Buy| J3["Pre-market Gap or Bullish Catalyst Resonance"]
+        I -->|🏦 Capital Inflow Buy| J4["OpenD Institutional Large-order Net Inflow"]
+        I -->|👀 Watch & Wait| J5["Holding / Watchlist Box-range Bottoms"]
+        I -->|Non-qualifying| J6["❌ Auto Skip"]
+        J1 & J2 & J3 & J4 & J5 --> K["Screened Candidate Pool"]
+        K -.->|Async Non-blocking| L["Create/Update Exclusive Knowledge Graphs"]
     end
 
-    subgraph S4 [Step 4: Ollama LLM Map-Reduce + vn.py Quant Risk Management]
-        E & K --> M[Inject Goal Parameters (G% Profit, T Days Horizon, D% Max Drawdown)]
-        M --> N[Ollama Map-Reduce Batched Inference Pool]
-        N --> Q[vn.py ATR Fixed Risk Budgeting + Dynamic Targets + Max 35% Position Cap]
+    subgraph S4 ["Step 4: Ollama LLM Map-Reduce + vn.py Quant Risk Management"]
+        E & K --> M["Inject Goal Parameters (G% Profit, T Days Horizon, D% Max Drawdown)"]
+        M --> N["Ollama Map-Reduce Batched Inference Pool"]
+        N --> Q["vn.py ATR Fixed Risk Budgeting + Dynamic Targets + Max 35% Position Cap"]
     end
 
-    subgraph S5 [Step 5: Execution Matrix & Outcome Verifier Feedback Loop]
-        Q --> O[Precision Quantitative Rebalance Directives with Exact Share Counts]
-        O --> R[1-Click Order Clipboard Copy for Manual Execution]
-        O --> S[Outcome Verifier & 3-State Attribution: 🟢SUCCESS / 🔴FAILURE / ⚪NOISE]
+    subgraph S5 ["Step 5: Execution Matrix & Outcome Verifier Feedback Loop"]
+        Q --> O["Precision Quantitative Rebalance Directives with Exact Share Counts"]
+        O --> R["1-Click Order Clipboard Copy for Manual Execution"]
+        O --> S["Outcome Verifier & 3-State Attribution: 🟢SUCCESS / 🔴FAILURE / ⚪NOISE"]
     end
 ```
 
