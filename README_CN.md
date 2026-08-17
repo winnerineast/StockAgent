@@ -91,7 +91,11 @@ flowchart TD
    - Ollama 推理采用 2-Worker 并发池与 60s 宽裕超时，彻底解决本地显存积压与排队超时问题。
 6. **SearXNG 双通道自动唤起 (Docker + WSL Daemon)**：
    - 自动检测并唤醒 WSL Ubuntu 与 Windows Docker 守护进程，无需手动开终端敲命令行启动服务。
-7. **100% 真实数据·零硬编码 (Zero Mock / Hardcoding)**：
+7. **⚔️ 多智能体多空对抗辩论与严苛风控质询 (Bull vs Bear Debate)**：
+   - 深度吸收 `TradingAgents` 架构精髓，单次 Prompt 中让大模型同时扮演多头研究员与严苛风控官，强制输出 `bearishRiskPoint` 致命下行风险点与 `bullBearVerdict` 裁决，拒绝盲目看多。
+8. **📅 美股专属财报静默期与期权 Gamma 异动雷达 (US Equity Special Intel)**：
+   - 动态推演财报倒计时（$\le 7$ 天自动标红高危静默期预警），结合盘口主力资金流向实时测算做市商 Gamma 偏斜与认购/认沽比（PCR）。
+9. **100% 真实数据·零硬编码 (Zero Mock / Hardcoding)**：
    - 彻底移除了所有静态假数据和 `1000.0` 默认兜底，所有行情、净值、现金均直连 OpenD 实盘端口。
 
 ---

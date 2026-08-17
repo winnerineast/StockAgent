@@ -263,6 +263,22 @@ export interface TradeInvariantStatus {
   wasClamped?: boolean;
 }
 
+export interface UsStockSpecialIntel {
+  earningsDate?: string;          // 财报发布日期 YYYY-MM-DD
+  daysToEarnings?: number;        // 距离财报发布还剩天数 (负数表示已发布完)
+  isEarningsBlackout: boolean;    // 是否处于财报静默/高危黑天鹅窗口 (<= 7 天)
+  earningsRiskLevel: "HIGH" | "MEDIUM" | "SAFE"; // 财报黑天鹅风险等级
+  earningsRiskLabel: string;      // 友好标签 (如: "⚠️ 距财报仅 4 天 · 静默高风险")
+  unusualOptionActivity?: {       // 美股特色期权异动 / Gamma 偏斜
+    hasUnusualFlow: boolean;
+    callPutVolumeRatio?: number;  // 认购/认沽交易量比率 (PCR)
+    impliedVolatilityPct?: number;// 隐含波动率 IV %
+    gammaBias: "CALL_SQUEEZE" | "PUT_HEDGING" | "NEUTRAL";
+    gammaBiasLabel: string;
+    flowSummary: string;
+  };
+}
+
 export interface ActionItem {
   action: "BUY" | "SELL" | "HOLD" | "TRIM";
   actionType?: StockActionVerdict;
@@ -304,6 +320,12 @@ export interface ActionItem {
   evidence?: Evidence5Pillars;
   evidenceHighlights?: Evidence3PillarsHighlights; // ⚡ 30秒极速决策 3 大核心客观事实锚点
   invariantStatus?: TradeInvariantStatus;          // 🛡️ 交易与数据不变量校验状态
+
+  // 多智能体对抗辩论与美股特色异动字段 (TradingAgents 务实落地)
+  bullThesis?: string;                         // 🟢 多方核心主线与催化支撑
+  bearishRiskPoint?: string;                   // 🔴 空方最严苛反驳点/最大下行破位风险
+  bullBearVerdict?: string;                    // ⚖️ 多空交锋最终裁决与防守底线
+  usSpecialIntel?: UsStockSpecialIntel;        // 📅 美股财报静默期与期权异动雷达
 
   // vn.py 量化内核新增字段
   atr?: number;                        // 14日真实波幅 ($)
@@ -490,6 +512,10 @@ export interface StockDeductionRetroItem {
   evidence5Pillars?: Evidence5Pillars;
   evidenceHighlights?: Evidence3PillarsHighlights; // ⚡ 30秒极速决策 3 大核心客观事实锚点
   invariantStatus?: TradeInvariantStatus;          // 🛡️ 交易与数据不变量校验状态
+  bullThesis?: string;                             // 🟢 多方核心主线与催化支撑
+  bearishRiskPoint?: string;                       // 🔴 空方最严苛反驳点/最大下行破位风险
+  bullBearVerdict?: string;                        // ⚖️ 多空交锋最终裁决与防守底线
+  usSpecialIntel?: UsStockSpecialIntel;            // 📅 美股财报静默期与期权异动雷达
 }
 
 export interface StrategyProgressStage {

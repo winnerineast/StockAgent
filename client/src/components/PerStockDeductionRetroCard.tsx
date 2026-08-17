@@ -16,6 +16,11 @@ import {
   BookOpen,
   Zap,
   CheckCircle2,
+  Swords,
+  Calendar,
+  AlertTriangle,
+  Scale,
+  Flame,
 } from "lucide-react";
 
 export interface TimeFmForecastItem {
@@ -71,6 +76,22 @@ interface KnowledgeEdge {
   timeLagDays?: number;
   impact: string;
   recencyWeight?: number;
+}
+
+export interface UsStockSpecialIntelProps {
+  earningsDate?: string;
+  daysToEarnings?: number;
+  isEarningsBlackout: boolean;
+  earningsRiskLevel: "HIGH" | "MEDIUM" | "SAFE";
+  earningsRiskLabel: string;
+  unusualOptionActivity?: {
+    hasUnusualFlow: boolean;
+    callPutVolumeRatio?: number;
+    impliedVolatilityPct?: number;
+    gammaBias: "CALL_SQUEEZE" | "PUT_HEDGING" | "NEUTRAL";
+    gammaBiasLabel: string;
+    flowSummary: string;
+  };
 }
 
 interface PerStockDeductionRetroCardProps {
@@ -141,6 +162,10 @@ interface PerStockDeductionRetroCardProps {
         diagnosticNotes?: string[];
         wasClamped?: boolean;
       };
+      bullThesis?: string;
+      bearishRiskPoint?: string;
+      bullBearVerdict?: string;
+      usSpecialIntel?: UsStockSpecialIntelProps;
     };
     evidenceHighlights?: {
       fundamentalAnchor: string;
@@ -155,6 +180,10 @@ interface PerStockDeductionRetroCardProps {
       diagnosticNotes?: string[];
       wasClamped?: boolean;
     };
+    bullThesis?: string;
+    bearishRiskPoint?: string;
+    bullBearVerdict?: string;
+    usSpecialIntel?: UsStockSpecialIntelProps;
   };
   onOpenKnowledgeGraph: (symbol: string) => void;
   onOpenDeductionModal?: (item: any) => void;
@@ -508,6 +537,91 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
                 </div>
               </div>
             </div>
+
+            {/* ⚔️ 多智能体多空辩论与对抗裁决 (Bull vs Bear Debate - TradingAgents 务实落地) */}
+            {(item.bullThesis || rec?.bullThesis || item.bearishRiskPoint || rec?.bearishRiskPoint) && (
+              <div className="pt-2 border-t border-slate-800/80 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 font-bold text-slate-200 text-xs">
+                    <Swords className="w-3.5 h-3.5 text-rose-400" />
+                    <span>⚔️ 多空对抗辩论与核心下行风险 (Bull vs Bear Debate)</span>
+                  </div>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-300 border border-rose-500/20 font-medium">
+                    拒绝盲目看多 · 严苛风控质询
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {/* 🟢 多方核心主线 */}
+                  <div className="p-2.5 rounded-lg bg-emerald-950/20 border border-emerald-500/20 space-y-1">
+                    <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-400">
+                      <span>🟢 多方核心主线 (Bull Thesis)</span>
+                    </div>
+                    <p className="text-slate-200 text-xs leading-relaxed">
+                      {item.bullThesis || rec?.bullThesis || "基本面与行业景气共振，支撑向上动量。"}
+                    </p>
+                  </div>
+
+                  {/* 🔴 空方最严苛反驳点 */}
+                  <div className="p-2.5 rounded-lg bg-rose-950/20 border border-rose-500/20 space-y-1">
+                    <div className="flex items-center gap-1 text-[11px] font-bold text-rose-400">
+                      <AlertTriangle className="w-3 h-3 text-rose-400 shrink-0" />
+                      <span>🔴 空方严苛反驳/最大黑天鹅 (Bearish Risk)</span>
+                    </div>
+                    <p className="text-slate-200 text-xs leading-relaxed">
+                      {item.bearishRiskPoint || rec?.bearishRiskPoint || "若跌破ATR止损防线或宏观流动性收紧需果断离场。"}
+                    </p>
+                  </div>
+                </div>
+
+                {/* ⚖️ 多空裁决与安全防线 */}
+                {(item.bullBearVerdict || rec?.bullBearVerdict) && (
+                  <div className="p-2 rounded-lg bg-slate-900/90 border border-slate-800 flex items-center gap-2 text-xs">
+                    <div className="p-1 rounded bg-indigo-500/20 text-indigo-300 shrink-0">
+                      <Scale className="w-3.5 h-3.5" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <span className="text-slate-400 font-medium">多空出清裁决：</span>
+                      <span className="text-indigo-200 font-semibold ml-1">{item.bullBearVerdict || rec?.bullBearVerdict}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 📅 美股特异化雷达 (Earnings & Unusual Option Flow) */}
+            {(item.usSpecialIntel || rec?.usSpecialIntel) && (
+              <div className="pt-2 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-xs">
+                {/* 财报窗口雷达 */}
+                <div className="flex items-center gap-1.5 p-1.5 px-2.5 rounded-lg bg-slate-900/90 border border-slate-800">
+                  <Calendar className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                  <span className="text-slate-400 text-[11px]">财报窗口:</span>
+                  <span className={`text-[11px] font-bold ${
+                    (item.usSpecialIntel?.earningsRiskLevel || rec?.usSpecialIntel?.earningsRiskLevel) === "HIGH"
+                      ? "text-rose-400 animate-pulse"
+                      : (item.usSpecialIntel?.earningsRiskLevel || rec?.usSpecialIntel?.earningsRiskLevel) === "MEDIUM"
+                      ? "text-amber-400"
+                      : "text-emerald-400"
+                  }`}>
+                    {item.usSpecialIntel?.earningsRiskLabel || rec?.usSpecialIntel?.earningsRiskLabel}
+                  </span>
+                </div>
+
+                {/* 期权 Gamma 与异动 */}
+                {(item.usSpecialIntel?.unusualOptionActivity || rec?.usSpecialIntel?.unusualOptionActivity) && (
+                  <div className="flex items-center gap-1.5 p-1.5 px-2.5 rounded-lg bg-slate-900/90 border border-slate-800">
+                    <Flame className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <span className="text-slate-400 text-[11px]">期权Gamma偏斜:</span>
+                    <span className="text-[11px] font-bold text-slate-200">
+                      {(item.usSpecialIntel?.unusualOptionActivity?.gammaBiasLabel || rec?.usSpecialIntel?.unusualOptionActivity?.gammaBiasLabel)}
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      (PCR: {(item.usSpecialIntel?.unusualOptionActivity?.callPutVolumeRatio || rec?.usSpecialIntel?.unusualOptionActivity?.callPutVolumeRatio)?.toFixed(2)})
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* 🚨 数据完备性刚性熔断报警卡片 (当信息缺失时显式拦截与引导) */}

@@ -405,6 +405,12 @@ ${kgText}
 
 ${verifiedMemories}
 
+【多智能体投研多空辩论与对抗出清 (Bull vs Bear Debate)】:
+请同时扮演两个专业角色进行逻辑交锋：
+1. 🟢 资深多头研究员 (Bull Thesis)：提炼支持建仓/持有的最强逻辑与催化支柱；
+2. 🔴 严苛风控官/空头辩护人 (Devil's Advocate / Bearish Risk)：用最刻薄的眼光挑刺，指出如果此交易做错，最致命的黑天鹅隐患、估值过热风险或破位止损点；
+3. ⚖️ 综合裁决 (Bull/Bear Verdict)：说明多空交锋后哪一方占据概率优势，以及必须紧盯的关键防守红线。
+
 输出要求:
 请以严格的 JSON 格式输出以下结构：
 {
@@ -413,6 +419,9 @@ ${verifiedMemories}
   "symbol": "${s}",
   "companyName": "${cName}",
   "whySummary": "1~2句话直击核心：基于5大客观事实说明【为什么】做此操作",
+  "bullThesis": "🟢 多方核心主线与催化支撑 (1句话精炼)",
+  "bearishRiskPoint": "🔴 空方最严苛反驳点/最大下行破位风险 (1句话指出最大黑天鹅与做错的可能)",
+  "bullBearVerdict": "⚖️ 多空交锋最终裁决与防守底线 (1句话标明胜出理由与防守底线)",
   "entryZoneMin": ${Number((curP * 0.992).toFixed(2))},
   "entryZoneMax": ${Number((curP * 1.006).toFixed(2))},
   "rationale": "基于当前 [${session.phaseLabel}] 时态与 【${session.activeRoleName}】 角色，消除迷茫的核心确定性逻辑 (论证为何能在限定 ${targetT} 日内达成 +${targetG}% 目标，明确挂单区间与时间止损纪律)",
@@ -456,6 +465,9 @@ ${verifiedMemories}
             action: jsonParsed.action || (inferActionType === "OPEN_POSITION" || inferActionType === "ADD_POSITION" ? "BUY" : inferActionType === "CLOSE_POSITION" || inferActionType === "TRIM_POSITION" ? "TRIM" : "HOLD"),
             actionType: inferActionType,
             whySummary: jsonParsed.whySummary || jsonParsed.rationale?.slice(0, 120) || `基于 [${s}] 5大客观事实与确定性量化求解建议 ${inferActionType}`,
+            bullThesis: jsonParsed.bullThesis || `${categoryInfo} · 契合限定 ${targetT} 日达成 +${targetG}% 动量目标`,
+            bearishRiskPoint: jsonParsed.bearishRiskPoint || `若价格跌破 -$${(curP * maxD / 100).toFixed(2)} (-${maxD}%) 软防线或基本面逻辑破坏需坚决止损离场`,
+            bullBearVerdict: jsonParsed.bullBearVerdict || `多方确定性胜出，但必须严守时间止损与仓位上限`,
             symbol: s,
             companyName: cName,
             suggestedShares: Number(jsonParsed.suggestedShares || 10),
@@ -624,6 +636,9 @@ ${verifiedMemories}
         strategyCategory: catMeta?.category,
         strategyCategoryLabel: catMeta?.label,
         strategyCategoryReason: catMeta?.reason,
+        bullThesis: `[${sym}] 触发 ${catMeta?.label || "量化主线"}，${rationale}`,
+        bearishRiskPoint: `若触及 -$${(curP * maxD / 100).toFixed(2)} (-${maxD}%) 风险红线或行业动量走弱，需执行止损纪律`,
+        bullBearVerdict: actionType === "BUY" ? "多方胜率占优，建议控制仓位并紧跟止损线" : "当前多空处于平衡观察期，保持纪律观望",
       };
 
       return quantRiskManager.alignActionWithQuantRisk(

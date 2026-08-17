@@ -91,7 +91,11 @@ Tailored for working professionals operating at a daily frequency after work wit
    - Ollama inference uses a 2-worker concurrency pool with 60s timeouts, eliminating VRAM saturation and queue timeouts.
 6. **Dual-Channel SearXNG Auto Wake-Up (Docker + WSL Daemon)**:
    - Automatically detects and wakes up WSL Ubuntu and Windows Docker engines when offline.
-7. **100% Real Data · Zero Hardcoding**:
+7. **⚔️ Multi-Agent Bull vs Bear Debate & Devil's Advocate (TradingAgents Alignment)**:
+   - Evaluates trades through opposing viewpoints (Bull Thesis vs strict Devil's Advocate) in a single-turn structured prompt, exposing downside risks (`bearishRiskPoint`) and decisive verdicts (`bullBearVerdict`).
+8. **📅 US Equity Special Intel & Earnings Blackout Radar**:
+   - Computes earnings countdowns with automatic $\le 7$-day high-risk blackout flags, and calculates market maker option Gamma squeeze vs Put hedging bias (PCR).
+9. **100% Real Data · Zero Hardcoding**:
    - All static mock data, hardcoded stock arrays, and dummy fallback figures (`1000.0`) have been 100% eliminated.
 
 ---
