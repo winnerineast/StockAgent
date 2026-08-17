@@ -59,13 +59,16 @@ flowchart TD
 
 ---
 
-## 💡 4 Core Quantitative Architecture Pillars Borrowed from vn.py
+## 💡 Core Architecture Inspired by vn.py & FINOS Legend
 
-Tailored for working professionals operating at a daily frequency after work with **strictly zero machine automated orders**, StockAgent incorporates vn.py's core quant architecture:
+Tailored for working professionals operating at a daily frequency after work with **strictly zero machine automated orders**, StockAgent incorporates quantitative risk and institutional-grade data integrity principles:
 
-| Pillar | vn.py Classical Quant Design | StockAgent Implementation & File Location |
+| Core Pillar | Classical Financial Engineering Design | StockAgent Implementation & File Location |
 | :--- | :--- | :--- |
-| **Portfolio Risk & Position Sizing** | `PortfolioStrategy` & `RiskManager` Fixed Risk Budgeting | [`quantRiskManager.ts`](file:///c:/Users/lilin/StockAgent/server/src/services/quantRiskManager.ts): Sizing based on ATR true range and user $G\%$ profit target & $D\%$ max drawdown. Strict $\le 35\%$ single-stock cap. |
+| **Trade Invariant Guardrails** | **FINOS Legend Class Invariants** & Strict Logical Safeguards | [`tradeInvariantValidator.ts`](file:///c:/Users/lilin/StockAgent/server/src/services/tradeInvariantValidator.ts): Anti-blowup & LLM hallucination guardrail. Strictly enforces cash sufficiency, max $35\%$ single-stock cap, monotonic stop-loss ($SL < P < TP$), and clamp-on-overflow with self-healing. |
+| **Portfolio Risk & Position Sizing** | `PortfolioStrategy` & `RiskManager` Fixed Risk Budgeting | [`quantRiskManager.ts`](file:///c:/Users/lilin/StockAgent/server/src/services/quantRiskManager.ts): Sizing based on ATR true range, user $G\%$ profit target, and $D\%$ max drawdown. |
+| **Decision Lineage & 30s Fact Panel** | **FINOS Legend Data Lineage** & Derivation Tracing | [`PerStockDeductionRetroCard.tsx`](file:///c:/Users/lilin/StockAgent/client/src/components/PerStockDeductionRetroCard.tsx): Replaces verbose LLM fluff with **📊 Fundamentals Anchor** + **📰 Breaking News Catalyst** + **🏦 Flow & ATR Risk Line** in an ultra-clean 30-second decision panel. |
+| **Supply Chain Topology & Ontology** | **FINOS Legend Financial Ontology** & Multi-hop Propagation | [`stockKnowledgeBaseData.ts`](file:///c:/Users/lilin/StockAgent/server/src/services/stockKnowledgeBaseData.ts): Pre-loaded with 50+ mega-cap US equity ecosystems (`NVDA/TSM/ASML/AMD/AVGO/PLTR/COIN/BABA`, etc.) for instant cross-industry cause-and-effect reasoning. |
 | **Outcome Verification & Attribution** | `TradeRecorder` & `PerformanceAnalysis` Performance Attribution | [`deductionVerificationService.ts`](file:///c:/Users/lilin/StockAgent/server/src/services/deductionVerificationService.ts): Point-to-point comparison of past $T$-day advice vs real close prices. Tri-state attribution (`SUCCESS`/`FAILURE`/`RANDOM_NOISE`), automatically feeding lessons learned into future LLM context. |
 | **Market Session State Machine** | `TradingCalendar` & `EventEngine` Calendar-driven State Machine | [`marketCalendarService.ts`](file:///c:/Users/lilin/StockAgent/server/src/services/marketCalendarService.ts): Categorizes `PRE_MARKET`, `INTRADAY`, `POST_MARKET`, and `WEEKEND`. Automatically activates post-market retro & next-day deduction after work. |
 | **Unified Gateway Adapter** | `BaseGateway` Native Protocol & Contract Abstraction | [`moomooAdapter.ts`](file:///c:/Users/lilin/StockAgent/server/src/services/moomooAdapter.ts): Wraps MooMoo OpenD Protobuf/TCP sockets into clean `PositionData`, `AccountData`, and `QuoteData` contracts. |
@@ -77,14 +80,18 @@ Tailored for working professionals operating at a daily frequency after work wit
 1. **Zero Automated Machine Execution**:
    - Eliminates API slippage, connection dropouts, and catastrophic margin liquidations;
    - Every stock card includes a **"📋 Copy Order Directive"** button, instantly copying `Symbol / Direction / Shares / Limit Price` for quick manual placement in mobile/desktop apps.
-2. **Preflight Readiness Barrier**:
+2. **⚡ 30-Second Quick Decision Facts (3-Pillar Hard Facts)**:
+   - Displays clear Fundamental, Catalyst, and Flow/ATR anchors on every card for quick 30-second reviews after work.
+3. **🛡️ Rigid Trade Invariant Guardrails**:
+   - Automatically validates and self-heals any LLM hallucination or capital overflow, stamping a verified safety badge on all recommendations.
+4. **Preflight Readiness Barrier**:
    - Enforces strict execution order: Step 1 will only trigger when **OpenD (11111)**, **SearXNG (8088)**, **Ollama Local LLM (11434)**, and **Trade Password Unlock** are all verified green.
-3. **Single-Flight Mutex & Throttled Queue**:
+5. **Single-Flight Mutex & Throttled Queue**:
    - Server-side single flight prevents duplicate concurrent deduction runs;
    - Ollama inference uses a 2-worker concurrency pool with 60s timeouts, eliminating VRAM saturation and queue timeouts.
-4. **Dual-Channel SearXNG Auto Wake-Up (Docker + WSL Daemon)**:
+6. **Dual-Channel SearXNG Auto Wake-Up (Docker + WSL Daemon)**:
    - Automatically detects and wakes up WSL Ubuntu and Windows Docker engines when offline.
-5. **100% Real Data · Zero Hardcoding**:
+7. **100% Real Data · Zero Hardcoding**:
    - All static mock data, hardcoded stock arrays, and dummy fallback figures (`1000.0`) have been 100% eliminated.
 
 ---

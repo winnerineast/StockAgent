@@ -539,6 +539,123 @@ export const REAL_STOCK_ECOSYSTEM_REGISTRY: Record<string, StockEcosystemDefinit
       },
     ],
   },
+
+  TSM: {
+    symbol: "TSM",
+    companyName: "Taiwan Semiconductor Manufacturing Co. (台积电)",
+    sector: "半导体晶圆代工龙头与 CoWoS 先进封装",
+    marketCap: "$880B",
+    beta: 1.25,
+    rootDescription: "全球 90%+ 先进制程与 AI 算力芯片独家代工厂",
+    nodes: [
+      { id: "TSM", name: "台积电 (TSM)", type: "ROOT_STOCK", marketSymbol: "TSM", sector: "晶圆代工", beta: 1.25, marketCap: "$880B", recentSignalScore: 0.85, description: "3nm/2nm 先进制程与 CoWoS 产能供不应求", recencyWeight: 1.0 },
+      { id: "ASML", name: "阿斯麦 (ASML)", type: "SUPPLIER", marketSymbol: "ASML", sector: "半导体设备", beta: 1.3, marketCap: "$350B", recentSignalScore: 0.5, description: "High-NA EUV 光刻机独家供应商，制约产能扩张节奏", recencyWeight: 1.0 },
+      { id: "NVDA", name: "英伟达 (NVDA)", type: "CLIENT", marketSymbol: "NVDA", sector: "算力设计", beta: 1.65, marketCap: "$3.2T", recentSignalScore: 0.85, description: "包揽其所有高端 GPU 晶圆与 CoWoS 产能", recencyWeight: 1.0 },
+      { id: "AAPL", name: "苹果 (AAPL)", type: "CLIENT", marketSymbol: "AAPL", sector: "消费电子", beta: 1.05, marketCap: "$3.4T", recentSignalScore: 0.7, description: "A/M 系列芯片 3nm 产能最大单一采购客户", recencyWeight: 1.0 },
+      { id: "INTC_FOUNDRY", name: "英特尔代工 (IFS) / 三星电子", type: "COMPETITOR", marketSymbol: "INTC", sector: "代工竞争", beta: 1.4, recentSignalScore: -0.3, description: "在先进制程良品率与商业代工生态落后台积电 1-2 代", recencyWeight: 1.0 },
+    ],
+    edges: [
+      { source: "ASML", target: "TSM", relation: "EUV 光刻机交付直接决定台积电高雄与宝山厂扩产节奏", relationType: "UPSTREAM_SUPPLIER", exposurePct: 0.5, elasticity: 0.7, timeLagDays: 15, impact: "POSITIVE", recencyWeight: 1.0 },
+      { source: "NVDA", target: "TSM", relation: "AI 算力爆发推动 CoWoS 高毛利封装订单与先进制程提价权", relationType: "DOWNSTREAM_CLIENT", exposurePct: 0.35, elasticity: 0.9, timeLagDays: 5, impact: "POSITIVE", recencyWeight: 1.0 },
+      { source: "AAPL", target: "TSM", relation: "iPhone 换机潮奠定每季度基本盘晶圆代工现金流", relationType: "DOWNSTREAM_CLIENT", exposurePct: 0.25, elasticity: 0.75, timeLagDays: 7, impact: "POSITIVE", recencyWeight: 1.0 },
+    ],
+  },
+
+  AMD: {
+    symbol: "AMD",
+    companyName: "Advanced Micro Devices, Inc. (超威半导体)",
+    sector: "高性能计算 CPU/GPU 与端侧 AI PC",
+    marketCap: "$240B",
+    beta: 1.6,
+    rootDescription: "x86 EPYC 服务器 CPU 份额持续扩张，MI300 挑战算力垄断",
+    nodes: [
+      { id: "AMD", name: "超威半导体 (AMD)", type: "ROOT_STOCK", marketSymbol: "AMD", sector: "半导体设计", beta: 1.6, marketCap: "$240B", recentSignalScore: 0.55, description: "EPYC 服务器份额创新高，MI325/MI350 加速追赶", recencyWeight: 1.0 },
+      { id: "TSM", name: "台积电 (TSM)", type: "SUPPLIER", marketSymbol: "TSM", sector: "晶圆代工", beta: 1.25, marketCap: "$880B", recentSignalScore: 0.85, description: "全线 CPU/GPU 产品 100% 依赖台积电 3nm/4nm 代工", recencyWeight: 1.0 },
+      { id: "NVDA", name: "英伟达 (NVDA)", type: "COMPETITOR", marketSymbol: "NVDA", sector: "AI GPU 龙头", beta: 1.65, marketCap: "$3.2T", recentSignalScore: 0.85, description: "CUDA 软件生态护城河对 AMD ROCm 构成高转换成本壁垒", recencyWeight: 1.0 },
+      { id: "MSFT_META", name: "微软与 Meta (开源算力支持者)", type: "CLIENT", sector: "云巨头采购", beta: 1.25, recentSignalScore: 0.75, description: "为了制衡 NVDA 议价权，积极采购 MI300X 分散供应链风险", recencyWeight: 1.0 },
+    ],
+    edges: [
+      { source: "TSM", target: "AMD", relation: "台积电代工产能保障 MI300 与 Zen5 CPU 交付节奏", relationType: "UPSTREAM_SUPPLIER", exposurePct: 0.8, elasticity: 0.9, timeLagDays: 7, impact: "POSITIVE", recencyWeight: 1.0 },
+      { source: "MSFT_META", target: "AMD", relation: "云巨头引入二供策略直接为 AMD 贡献数十亿美元 AI 年化增量营收", relationType: "DOWNSTREAM_CLIENT", exposurePct: 0.3, elasticity: 1.1, timeLagDays: 5, impact: "POSITIVE", recencyWeight: 1.0 },
+      { source: "NVDA", target: "AMD", relation: "英伟达 Blackwell 降价或提早出货会挤压 AMD 定价空间", relationType: "COMPETITOR", exposurePct: 0.4, elasticity: -0.6, timeLagDays: 3, impact: "NEGATIVE", recencyWeight: 1.0 },
+    ],
+  },
+
+  AVGO: {
+    symbol: "AVGO",
+    companyName: "Broadcom Inc. (博通)",
+    sector: "定制 AI ASIC 芯片、以太网交换芯片与 VMware 基础设施",
+    marketCap: "$780B",
+    beta: 1.45,
+    rootDescription: "全球定制算力 ASIC (TPU/Meta) 与高速网络连接龙头",
+    nodes: [
+      { id: "AVGO", name: "博通 (AVGO)", type: "ROOT_STOCK", marketSymbol: "AVGO", sector: "半导体与企业软件", beta: 1.45, marketCap: "$780B", recentSignalScore: 0.8, description: "Google TPU 独家定制伙伴，Tomahawk 51.2T 网络交换芯片统治地位", recencyWeight: 1.0 },
+      { id: "TSM", name: "台积电 (TSM)", type: "SUPPLIER", marketSymbol: "TSM", sector: "晶圆代工", beta: 1.25, marketCap: "$880B", recentSignalScore: 0.85, description: "ASIC 芯片与网络硅光封装代工厂", recencyWeight: 1.0 },
+      { id: "GOOGL", name: "谷歌 Alphabet (GOOGL)", type: "CLIENT", marketSymbol: "GOOGL", sector: "AI 算力大客户", beta: 1.1, marketCap: "$2.1T", recentSignalScore: 0.7, description: "TPU v5/v6 定制设计核心客户 (占其半导体收入 30%+)", recencyWeight: 1.0 },
+      { id: "META", name: "Meta Platforms (META)", type: "CLIENT", marketSymbol: "META", sector: "自研 MTIA 算力", beta: 1.35, marketCap: "$1.4T", recentSignalScore: 0.75, description: "MTIA 训练与推理定制芯片合作方", recencyWeight: 1.0 },
+    ],
+    edges: [
+      { source: "GOOGL", target: "AVGO", relation: "Google TPU 算力集群扩张直接拉动博通定制芯片高确定性增长", relationType: "DOWNSTREAM_CLIENT", exposurePct: 0.35, elasticity: 0.95, timeLagDays: 5, impact: "POSITIVE", recencyWeight: 1.0 },
+      { source: "META", target: "AVGO", relation: "Meta 自研加速芯片采购降低对公版 GPU 依赖", relationType: "DOWNSTREAM_CLIENT", exposurePct: 0.2, elasticity: 0.8, timeLagDays: 5, impact: "POSITIVE", recencyWeight: 1.0 },
+    ],
+  },
+
+  PLTR: {
+    symbol: "PLTR",
+    companyName: "Palantir Technologies Inc. (帕兰提尔)",
+    sector: "企业级 AI 操作系统 (AIP) 与国防大数据中枢",
+    marketCap: "$140B",
+    beta: 1.75,
+    rootDescription: "美军国防数据底座与 AIP 企业级智能体工作流爆炸式增长",
+    nodes: [
+      { id: "PLTR", name: "帕兰提尔 (PLTR)", type: "ROOT_STOCK", marketSymbol: "PLTR", sector: "企业 AI 软件", beta: 1.75, marketCap: "$140B", recentSignalScore: 0.85, description: "AIP 引导营 (Bootcamp) 转化率超预期，商业端营收增速 +50%+", recencyWeight: 1.0 },
+      { id: "US_DOD", name: "美国国防部与北约盟国采购", type: "CLIENT", sector: "政府与军工", beta: 0.5, recentSignalScore: 0.75, description: "Gotham / Maven 军事智能化合约提供高黏性稳定现金流", recencyWeight: 1.0 },
+      { id: "FORTUNE_COMMERCIAL", name: "北美大中型商业客户 (AIP)", type: "CLIENT", sector: "商业端软件", beta: 1.3, recentSignalScore: 0.9, description: "制造业、金融与医疗企业自动化落地首选", recencyWeight: 1.0 },
+      { id: "SNOW_MSFT", name: "Snowflake / Microsoft Fabric", type: "COMPETITOR", sector: "数据中台", beta: 1.4, recentSignalScore: 0.4, description: "在基础数据湖与分析工具层竞争，但在本体层 (Ontology) PLTR 领先", recencyWeight: 1.0 },
+    ],
+    edges: [
+      { source: "FORTUNE_COMMERCIAL", target: "PLTR", relation: "AIP 客户数激增与大单客单价 (ACV) 提升驱动估值戴维斯双击", relationType: "DOWNSTREAM_CLIENT", exposurePct: 0.45, elasticity: 1.3, timeLagDays: 3, impact: "POSITIVE", recencyWeight: 1.0 },
+      { source: "US_DOD", target: "PLTR", relation: "地缘冲突加剧提升国防部对 AI 作战指挥系统的预算拨款", relationType: "DOWNSTREAM_CLIENT", exposurePct: 0.5, elasticity: 0.7, timeLagDays: 7, impact: "POSITIVE", recencyWeight: 1.0 },
+    ],
+  },
+
+  COIN: {
+    symbol: "COIN",
+    companyName: "Coinbase Global, Inc.",
+    sector: "加密合规交易所、Base L2 链与现货 ETF 托管中枢",
+    marketCap: "$80B",
+    beta: 2.8,
+    rootDescription: "华尔街主流现货 ETF 核心托管行与 Base 生态收益中枢",
+    nodes: [
+      { id: "COIN", name: "Coinbase (COIN)", type: "ROOT_STOCK", marketSymbol: "COIN", sector: "加密金融", beta: 2.8, marketCap: "$80B", recentSignalScore: 0.7, description: "承接 80%+ 现货 BTC/ETH ETF 托管业务与交易手续费弹性", recencyWeight: 1.0 },
+      { id: "BTC_ETH_MARKET", name: "比特币与以太坊现货资产价格", type: "CONCEPT", sector: "底层资产价格", beta: 2.5, recentSignalScore: 0.8, description: "币价上涨直接放大交易量、托管资产规模 (AUC) 与质押收益", recencyWeight: 1.0 },
+      { id: "FED_RATE_INCOME", name: "美联储利率与 USDC 储备利息分成", type: "MACRO", sector: "利息收益", beta: 1.0, recentSignalScore: 0.3, description: "USDC 储备利息贡献其高毛利非交易收入重要组成", recencyWeight: 1.0 },
+      { id: "SEC_REGULATION", name: "SEC 监管诉讼与合规法案进展", type: "MACRO", sector: "政策合规", beta: 1.5, recentSignalScore: 0.6, description: "清晰的跨党派加密监管立法消除估值折价阴霾", recencyWeight: 1.0 },
+    ],
+    edges: [
+      { source: "BTC_ETH_MARKET", target: "COIN", relation: "牛市换手率激增推动交易佣金与订阅收入非线性爆发", relationType: "CONCEPT_THEME", exposurePct: 0.7, elasticity: 1.6, timeLagDays: 1, impact: "POSITIVE", recencyWeight: 1.0 },
+      { source: "SEC_REGULATION", target: "COIN", relation: "监管利空落地或胜诉带动风险偏好修复", relationType: "MACRO_DRIVER", exposurePct: 0.4, elasticity: 0.9, timeLagDays: 2, impact: "POSITIVE", recencyWeight: 1.0 },
+    ],
+  },
+
+  BABA: {
+    symbol: "BABA",
+    companyName: "Alibaba Group Holding (阿里巴巴)",
+    sector: "中概互联、阿里云与开源大模型 Qwen",
+    marketCap: "$220B",
+    beta: 1.35,
+    rootDescription: "淘天核心电商稳盘、阿里云公有云增长与 Qwen 大模型先锋",
+    nodes: [
+      { id: "BABA", name: "阿里巴巴 (BABA)", type: "ROOT_STOCK", marketSymbol: "BABA", sector: "电商与云计算", beta: 1.35, marketCap: "$220B", recentSignalScore: 0.5, description: "大规模股份回购 + 高股息，通义千问 Qwen 开源生态全球领先", recencyWeight: 1.0 },
+      { id: "CHINA_CONSUMPTION", name: "中国宏观消费景气度与降息刺激政策", type: "MACRO", sector: "宏观消费", beta: 1.2, recentSignalScore: 0.5, description: "宏观财政政策力度直接决定淘天 GMV 增速与估值修复", recencyWeight: 1.0 },
+      { id: "PDD", name: "拼多多 (PDD)", type: "COMPETITOR", marketSymbol: "PDD", sector: "国内与跨境电商", beta: 1.45, marketCap: "$160B", recentSignalScore: 0.6, description: "在下沉市场与白牌供应链持续分流淘天电商份额", recencyWeight: 1.0 },
+      { id: "ALI_CLOUD_AI", name: "阿里云 AI 算力与企业大模型服务", type: "CONCEPT", sector: "AI 商业化", beta: 1.3, recentSignalScore: 0.8, description: "外部客户 AI 相关收入连续多季度保持三位数增长", recencyWeight: 1.0 },
+    ],
+    edges: [
+      { source: "CHINA_CONSUMPTION", target: "BABA", relation: "内需刺激政策提升电商 GMV 增速与外资超配中概仓位", relationType: "MACRO_DRIVER", exposurePct: 0.55, elasticity: 1.1, timeLagDays: 2, impact: "POSITIVE", recencyWeight: 1.0 },
+      { source: "ALI_CLOUD_AI", target: "BABA", relation: "Qwen 开源生态带动云存储与算力调用量激增", relationType: "CONCEPT_THEME", exposurePct: 0.3, elasticity: 0.9, timeLagDays: 3, impact: "POSITIVE", recencyWeight: 1.0 },
+    ],
+  },
 };
 
 /**

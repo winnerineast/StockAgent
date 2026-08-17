@@ -198,6 +198,7 @@ export class DeductionVerificationService {
         TRIM_POSITION: "🟡 建议减仓",
         CLOSE_POSITION: "🔴 建议清仓",
         HOLD_AND_WATCH: "⚪ 保持观望",
+        INSUFFICIENT_DATA_ABORT: "⚠️ 信息不足·熔断推演",
       };
 
       const outcome = (r.verificationOutcome as any) || (r.isVerified ? "RANDOM_NOISE" : undefined);

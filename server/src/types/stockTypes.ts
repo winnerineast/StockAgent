@@ -51,7 +51,99 @@ export type StockActionVerdict =
   | "ADD_POSITION"    // 2. 加仓 (浮盈/回踩支撑追加头寸)
   | "TRIM_POSITION"   // 3. 减仓 (触及阻力/阶段锁利避险)
   | "CLOSE_POSITION"  // 4. 清仓 (破位硬止损/逻辑破坏清仓)
-  | "HOLD_AND_WATCH"; // 5. 持有/观望 (中性观望)
+  | "HOLD_AND_WATCH"  // 5. 持有/观望 (中性观望)
+  | "INSUFFICIENT_DATA_ABORT"; // 6. 🚨 信息不足·推演硬熔断
+
+// 1. 数据缺失诊断与刚性准入契约
+export interface MissingDataDiagnostic {
+  category: "LIVE_MARKET" | "NEWS_SEARCH" | "FUNDAMENTALS" | "KNOWLEDGE_GRAPH" | "OPTIONS_CHAIN";
+  field: string;
+  severity: "CRITICAL" | "WARNING";
+  description: string;
+  remedyAction: string;
+}
+
+export interface DataSufficiencyConfig {
+  requireOrderBookPrice?: boolean;
+  requireMainCapitalFlow?: boolean;
+  requireNewsCoverage?: boolean;
+  maxNewsAgeDays?: number;
+  requireFundamentalsPe?: boolean;
+  requireKnowledgeGraph?: boolean;
+  minKnowledgeGraphNodes?: number;
+  requireOptionGamma?: boolean;
+}
+
+export interface DataSufficiencyReport {
+  symbol: string;
+  isSufficient: boolean;
+  completenessScore: number; // 0 ~ 100
+  criticalMissingCount: number;
+  warningCount: number;
+  missingItems: MissingDataDiagnostic[];
+  abortReason?: string;
+  evaluatedAt: string;
+}
+
+// 2. 多主体博弈仿真与情景演化契约
+export type MarketParticipantType =
+  | "LONG_ONLY_INSTITUTION"  // 长线价值机构
+  | "MOMENTUM_CTA"           // 动量量化
+  | "MARKET_MAKER_GAMMA"     // 做市商/期权Gamma
+  | "RETAIL_SENTIMENT";      // 散户情绪
+
+export interface AgentBeliefState {
+  agentType: MarketParticipantType;
+  agentLabel: string;
+  bias: "STRONG_LONG" | "LEAN_LONG" | "NEUTRAL" | "LEAN_SHORT" | "STRONG_SHORT";
+  biasScore: number;          // -100 ~ +100
+  confidenceScore: number;    // 0 ~ 100
+  targetPriceHorizon: number; // 心理预期目标价
+  orderIntensity: number;     // 资金参与烈度 0.0 ~ 1.0
+  corePremise: string;        // 核心判断依据
+  vulnerabilityTrigger: string; // 迫使其反向止损/踩踏的触发条件
+}
+
+export interface MarketSimulationResult {
+  symbol: string;
+  simulationRounds: number;
+  agentStates: AgentBeliefState[];
+  equilibriumPriceCenter: number;  // 虚拟博弈出清中枢价
+  equilibriumDispersionPct: number;// 多空分歧度 (% 越大代表博弈越激烈)
+  liquidityFragilityScore: number; // 流动性踩踏脆弱指数 (0~100)
+  dominantPlayer: MarketParticipantType; // 当前盘面主导力量
+  gammaSupportLevel?: number;      // 做市商Gamma防御位
+  institutionalAccumulationFloor?: number; // 机构吸筹托底价
+  ctaBreakoutTrigger?: number;     // CTA触发追涨/杀跌临界点
+}
+
+export interface ScenarioBranch {
+  scenarioName: "BASE_EQUILIBRIUM" | "BULLISH_CATALYST" | "BEARISH_CONTROLLING";
+  scenarioLabel: string;
+  probability: number;            // 出现概率 0.0 ~ 1.0 (总和 1.0)
+  triggerCondition: string;       // 触发条件
+  projectedPriceTarget: number;   // 演化目标价
+  recommendedAction: "BUY_AGGRESSIVE" | "BUY_SCALE_IN" | "HOLD_AND_OBSERVE" | "TRIM_DEFENSIVE" | "CLOSE_HARD_STOP";
+  entryZone: { min: number; max: number };
+  executionRule: string;          // 具体挂单指令 (供上班族手机挂单)
+  timeHorizonDays: number;
+}
+
+export interface AdaptiveActionPolicy {
+  symbol: string;
+  companyName: string;
+  currentPrice: number;
+  simulation: MarketSimulationResult;
+  scenarioTree: ScenarioBranch[];
+  quantRiskVerdict: {
+    recommendedShares: number;
+    allocatedCapitalAmount: number;
+    capitalAllocationPct: number;
+    hardStopLossPrice: number;
+    maxRiskLossDollar: number;
+    atr14: number;
+  };
+}
 
 export interface NewsEvidenceItem {
   title: string;
@@ -156,6 +248,21 @@ export interface TemporalEvolutionItem {
   evidence?: Evidence5Pillars;
 }
 
+export interface Evidence3PillarsHighlights {
+  fundamentalAnchor: string;    // 📊 基本面与估值锚点 (如: PE 28 处于历史 15% 分位，Q2 营收增速 +35%)
+  catalystAnchor: string;       // 📰 权威资讯与催化锚点 (如: 彭博今日确认其获得甲骨文 $500M 算力大单)
+  flowRiskAnchor: string;       // 🏦 资金与 ATR 防线 (如: OpenD 主力资金净流入 $1.2B，ATR 软止损 $125.4，盈亏比 2.3)
+}
+
+export interface TradeInvariantStatus {
+  isVerified: boolean;
+  passedCount: number;
+  totalChecks: number;
+  badges: string[]; // ["CASH_BOUND_SAFE", "STOP_LOSS_INTEGRITY", "POSITION_CAP_SAFE", "PRICE_VALID", "ENTRY_ZONE_SAFE"]
+  diagnosticNotes?: string[];
+  wasClamped?: boolean;
+}
+
 export interface ActionItem {
   action: "BUY" | "SELL" | "HOLD" | "TRIM";
   actionType?: StockActionVerdict;
@@ -195,6 +302,8 @@ export interface ActionItem {
   expectedPnLAmount?: number;          // 目标达成预期净盈利 ($)
   goalDrivenRationale?: string;        // 消除迷茫度的核心因果逻辑
   evidence?: Evidence5Pillars;
+  evidenceHighlights?: Evidence3PillarsHighlights; // ⚡ 30秒极速决策 3 大核心客观事实锚点
+  invariantStatus?: TradeInvariantStatus;          // 🛡️ 交易与数据不变量校验状态
 
   // vn.py 量化内核新增字段
   atr?: number;                        // 14日真实波幅 ($)
@@ -202,6 +311,12 @@ export interface ActionItem {
   perShareRisk?: number;               // 单股止损风险敞口 ($)
   maxRiskBudget?: number;              // 单笔最大允许风险金 ($，按 1.5% 账户资金预算)
   positionWeightPct?: number;          // 建议仓位占总资产比率 (%)
+
+  // 数据完备性与博弈世界模型扩展字段
+  dataSufficiencyReport?: DataSufficiencyReport; // 数据完备性评估与缺失诊断报告
+  simulationResult?: MarketSimulationResult;     // 微观多主体博弈仿真出清结果
+  scenarioBranches?: ScenarioBranch[];           // 三态情景演化分支
+  adaptivePolicy?: AdaptiveActionPolicy;         // 最终自适应行动策略包
 }
 
 export interface RiskAlert {
@@ -373,6 +488,8 @@ export interface StockDeductionRetroItem {
   pastRetro: PastDeductionRetroPerStock; // 实盘三态闭环检验与经验库
   currentRecommendation?: ActionItem;
   evidence5Pillars?: Evidence5Pillars;
+  evidenceHighlights?: Evidence3PillarsHighlights; // ⚡ 30秒极速决策 3 大核心客观事实锚点
+  invariantStatus?: TradeInvariantStatus;          // 🛡️ 交易与数据不变量校验状态
 }
 
 export interface StrategyProgressStage {

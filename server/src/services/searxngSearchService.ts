@@ -14,6 +14,7 @@ export interface SearXNGStatus {
   connected: boolean;
   searxngUrl: string;
   message: string;
+  isFallback?: boolean;
 }
 
 export class SearXNGSearchService {
@@ -37,24 +38,26 @@ export class SearXNGSearchService {
         if (resp.ok || resp.status === 200 || resp.status === 302 || resp.status === 303) {
           return {
             connected: true,
+            isFallback: false,
             searxngUrl: u,
             message: "🟢 SearXNG 本地 Docker 容器运行正常",
           };
         }
-      } catch (err: any) {
-        // console.log("[SearXNG debug err]", u, err.message);
-      }
+      } catch (err: any) {}
     }
 
     const now = Date.now();
     if (attemptAutoStart && !this.isAttemptingStart && (now - this.lastStartAttemptTime > 15000)) {
-      return await this.ensureSearXNGRunning();
+      const autoRes = await this.ensureSearXNGRunning();
+      if (autoRes.connected && !autoRes.isFallback) return autoRes;
     }
 
+    // 🌟 当本地 Docker 容器离线时，自动切换为免 Docker 备用直连通道 (保证资讯永远可用)
     return {
-      connected: false,
-      searxngUrl: this.baseUrl,
-      message: `🔴 未检测到 SearXNG 服务 (${this.baseUrl})`,
+      connected: true,
+      isFallback: true,
+      searxngUrl: "DIRECT_FINANCIAL_RSS",
+      message: "🟡 备用免Docker财经直连通道就绪 (Google/Yahoo News)",
     };
   }
 
@@ -68,30 +71,35 @@ export class SearXNGSearchService {
     this.lastStartAttemptTime = now;
 
     try {
-      console.log("[SearXNGSearchService] 执行 `docker start searxng`...");
+      console.log("[SearXNGSearchService] 尝试自动唤醒 SearXNG (宿主机 Docker & WSL)...");
       try {
         execSync("docker start searxng", { stdio: "ignore", timeout: 8000 });
       } catch (e1) {
         try {
-          execSync("docker run -d -p 8088:8080 --name searxng searxng/searxng:latest", { stdio: "ignore", timeout: 12000 });
+          execSync('docker run -d -p 8088:8080 --name searxng --restart=always -e SEARXNG_SECRET="stockagent_secret_key_2026" searxng/searxng:latest', { stdio: "ignore", timeout: 12000 });
         } catch (e1_2) {}
       }
 
       let status = await this.getStatus(false);
-      if (status.connected) {
+      if (status.connected && !status.isFallback) {
         console.log("[SearXNGSearchService] 🟢 宿主机 Docker SearXNG 唤醒成功！");
         this.isAttemptingStart = false;
         return status;
       }
 
-      try {
-        execSync('wsl -d Ubuntu -u root sh -c "service docker start && chmod 666 /var/run/docker.sock && docker start searxng"', { stdio: "ignore", timeout: 12000 });
-      } catch (wslErr) {}
+      // 尝试多分发版 WSL 唤醒
+      const wslDistros = ["", " -d Ubuntu", " -d Ubuntu-22.04", " -d Ubuntu-24.04", " -d Debian"];
+      for (const distroArg of wslDistros) {
+        try {
+          execSync(`wsl${distroArg} -u root sh -c "service docker start && chmod 666 /var/run/docker.sock 2>/dev/null; docker start searxng 2>/dev/null || docker run -d -p 8088:8080 --name searxng --restart=always -e SEARXNG_SECRET=\\"stockagent_secret_key_2026\\" searxng/searxng:latest"`, { stdio: "ignore", timeout: 10000 });
+          break;
+        } catch (wslErr) {}
+      }
 
       for (let attempt = 1; attempt <= 10; attempt++) {
         await new Promise((resolve) => setTimeout(resolve, 1000));
         status = await this.getStatus(false);
-        if (status.connected) {
+        if (status.connected && !status.isFallback) {
           console.log(`[SearXNGSearchService] 🟢 SearXNG 容器在第 ${attempt} 秒成功启动！`);
           this.isAttemptingStart = false;
           return status;
@@ -106,39 +114,125 @@ export class SearXNGSearchService {
     return await this.getStatus(false);
   }
 
-  public async searchStockNews(query: string, maxResults: number = 5): Promise<SearXNGSearchResultItem[]> {
-    const status = await this.getStatus(true);
-    if (!status.connected) {
-      return [];
-    }
+  /**
+   * 🌟 免 Docker 直连财经快讯降级抓取器 (Google News RSS & Yahoo Finance RSS)
+   * 当 SearXNG 离线时自动激活，提供真实、免依赖的权威财经新闻
+   */
+  public async fetchFallbackRssNews(
+    query: string,
+    maxResults: number = 5
+  ): Promise<SearXNGSearchResultItem[]> {
+    const results: SearXNGSearchResultItem[] = [];
 
-    const doQuery = async () => {
-      const searchUrl = `${this.baseUrl}/search?q=${encodeURIComponent(query)}&format=json&categories=news,general`;
-      const resp = await fetch(searchUrl);
-      if (!resp.ok) {
-        throw new Error(`SearXNG HTTP ${resp.status}`);
-      }
-      const data: any = await resp.json();
-      return Array.isArray(data?.results) ? data.results : [];
-    };
-
+    // 1. 尝试 Google News RSS (英文美股权威资讯)
     try {
-      let results = await doQuery();
-      if (results.length === 0) {
-        await new Promise((resolve) => setTimeout(resolve, 800));
-        results = await doQuery();
-      }
+      const cleanQuery = query.replace(/site:\S+/g, "").replace(/[()]/g, "").trim();
+      const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(cleanQuery)}&hl=en-US&gl=US&ceid=US:en`;
+      const resp = await fetch(rssUrl, {
+        signal: AbortSignal.timeout(4000),
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        },
+      });
 
-      return results.slice(0, maxResults).map((r: any) => ({
-        title: r.title || "",
-        url: r.url || "",
-        content: r.content || r.snippet || "",
-        engine: r.engine || "searxng",
-      }));
-    } catch (err: any) {
-      console.warn(`[SearXNGSearchService] 搜索异常 (${query}):`, err.message || err);
-      return [];
+      if (resp.ok) {
+        const xmlText = await resp.text();
+        const itemRegex = /<item>[\s\S]*?<title>([\s\S]*?)<\/title>[\s\S]*?<link>([\s\S]*?)<\/link>[\s\S]*?(?:<description>([\s\S]*?)<\/description>)?[\s\S]*?<\/item>/gi;
+        let match;
+        while ((match = itemRegex.exec(xmlText)) !== null && results.length < maxResults) {
+          const rawTitle = match[1] || "";
+          const link = match[2] || "";
+          const desc = match[3] || "";
+          const cleanTitle = rawTitle.replace(/<!\[CDATA\[(.*?)\]\]>/g, "$1").replace(/<\/?[^>]+(>|$)/g, "").trim();
+          const cleanDesc = desc.replace(/<!\[CDATA\[(.*?)\]\]>/g, "$1").replace(/<\/?[^>]+(>|$)/g, "").trim();
+          if (cleanTitle && cleanTitle.length > 5) {
+            results.push({
+              title: cleanTitle,
+              url: link.trim(),
+              content: cleanDesc || cleanTitle,
+              engine: "google_news_rss",
+            });
+          }
+        }
+      }
+    } catch (e: any) {}
+
+    // 2. 若依然不足，尝试 Yahoo Finance RSS
+    if (results.length < maxResults) {
+      try {
+        const symbolMatch = query.match(/"([A-Z]{1,5})"/i) || query.match(/\b([A-Z]{1,5})\b/);
+        const sym = symbolMatch ? symbolMatch[1].toUpperCase() : "SPY";
+        const yahooUrl = `https://feeds.finance.yahoo.com/rss/2.0/headline?s=${sym}&region=US&lang=en-US`;
+        const resp = await fetch(yahooUrl, {
+          signal: AbortSignal.timeout(3000),
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+          },
+        });
+
+        if (resp.ok) {
+          const xmlText = await resp.text();
+          const itemRegex = /<item>[\s\S]*?<title>([\s\S]*?)<\/title>[\s\S]*?<link>([\s\S]*?)<\/link>[\s\S]*?(?:<description>([\s\S]*?)<\/description>)?[\s\S]*?<\/item>/gi;
+          let match;
+          while ((match = itemRegex.exec(xmlText)) !== null && results.length < maxResults) {
+            const rawTitle = match[1] || "";
+            const link = match[2] || "";
+            const desc = match[3] || "";
+            const cleanTitle = rawTitle.replace(/<!\[CDATA\[(.*?)\]\]>/g, "$1").replace(/<\/?[^>]+(>|$)/g, "").trim();
+            const cleanDesc = desc.replace(/<!\[CDATA\[(.*?)\]\]>/g, "$1").replace(/<\/?[^>]+(>|$)/g, "").trim();
+            if (cleanTitle && !results.some((r) => r.title === cleanTitle)) {
+              results.push({
+                title: cleanTitle,
+                url: link.trim(),
+                content: cleanDesc || cleanTitle,
+                engine: "yahoo_finance_rss",
+              });
+            }
+          }
+        }
+      } catch (e: any) {}
     }
+
+    return results;
+  }
+
+  public async searchStockNews(query: string, maxResults: number = 5): Promise<SearXNGSearchResultItem[]> {
+    const status = await this.getStatus(false);
+
+    // 如果主通道 SearXNG 在线，优先请求 SearXNG
+    if (status.connected && !status.isFallback) {
+      const doQuery = async () => {
+        const searchUrl = `${this.baseUrl}/search?q=${encodeURIComponent(query)}&format=json&categories=news,general`;
+        const resp = await fetch(searchUrl, { signal: AbortSignal.timeout(3500) });
+        if (!resp.ok) {
+          throw new Error(`SearXNG HTTP ${resp.status}`);
+        }
+        const data: any = await resp.json();
+        return Array.isArray(data?.results) ? data.results : [];
+      };
+
+      try {
+        let results = await doQuery();
+        if (results.length === 0) {
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          results = await doQuery();
+        }
+
+        if (results.length > 0) {
+          return results.slice(0, maxResults).map((r: any) => ({
+            title: r.title || "",
+            url: r.url || "",
+            content: r.content || r.snippet || "",
+            engine: r.engine || "searxng",
+          }));
+        }
+      } catch (err: any) {
+        console.warn(`[SearXNGSearchService] 主通道搜索异常 (${query})，降级至备用直连通道:`, err.message || err);
+      }
+    }
+
+    // 备用免 Docker 直连通道
+    return await this.fetchFallbackRssNews(query, maxResults);
   }
 
   /**

@@ -40,6 +40,7 @@ export default function App() {
 
   // Modals
   const [unlockModalOpen, setUnlockModalOpen] = useState<boolean>(false);
+  const [barrierModalOpen, setBarrierModalOpen] = useState<boolean>(false);
   const [deductionModalOpen, setDeductionModalOpen] = useState<boolean>(false);
   const [selectedKgSymbol, setSelectedKgSymbol] = useState<string | null>(null);
   const [kgData, setKgData] = useState<any>(null);
@@ -260,7 +261,12 @@ export default function App() {
     if (!forceStart) {
       const cur = statusesRef.current;
       if (!cur.openD || !cur.searxng || !cur.ollama || !cur.isUnlocked) {
-        console.log("[StockAgent] 执行顺序阻塞生效：OpenD / SearXNG / Ollama / 交易解锁 未全部就绪，暂不启动 Step 1。", cur);
+        if (!cur.isUnlocked) {
+          setUnlockModalOpen(true);
+        } else {
+          setBarrierModalOpen(true);
+        }
+        console.warn("[StockAgent] 执行顺序阻塞生效：前置服务未全部就绪。", cur);
         return;
       }
     }
@@ -516,6 +522,133 @@ export default function App() {
         pipelineData={deductionPipeline}
         strategyHistory={strategyHistory}
       />
+
+      {/* 🚀 前置就绪屏障诊断与阻断弹窗 (Preflight Barrier Modal) */}
+      {barrierModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
+          <div className="max-w-md w-full glass-card border border-amber-500/40 p-6 rounded-2xl shadow-2xl bg-slate-900/95 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2.5 text-amber-400 font-bold text-base">
+                <span className="text-xl">🛡️</span>
+                <span>推演启动前置屏障未就绪</span>
+              </div>
+              <button
+                onClick={() => setBarrierModalOpen(false)}
+                className="text-slate-400 hover:text-white text-lg p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              为保证实盘推演与多主体博弈世界模型的<strong>100% 真实数据与资金安全</strong>，系统严禁在核心环境缺失时盲目推演。请确认以下 4 项依赖全部就绪：
+            </p>
+
+            <div className="space-y-2 text-xs">
+              {/* 1. OpenD */}
+              <div className={`p-3 rounded-xl border flex items-center justify-between ${
+                openDConnected ? "bg-emerald-950/20 border-emerald-500/30" : "bg-rose-950/20 border-rose-500/40"
+              }`}>
+                <div>
+                  <div className="font-bold text-white flex items-center gap-1.5">
+                    <span>{openDConnected ? "🟢" : "🔴"} MooMoo OpenD 网关 (11111)</span>
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-0.5">
+                    {openDConnected ? "原生 TCP 连通，实盘持仓与报价正常" : "请打开并登录本地 MooMoo OpenD 客户端"}
+                  </div>
+                </div>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                  openDConnected ? "bg-emerald-500/20 text-emerald-300" : "bg-rose-500/20 text-rose-300"
+                }`}>
+                  {openDConnected ? "就绪" : "离线"}
+                </span>
+              </div>
+
+              {/* 2. SearXNG */}
+              <div className={`p-3 rounded-xl border flex items-center justify-between ${
+                searxngConnected ? "bg-emerald-950/20 border-emerald-500/30" : "bg-rose-950/20 border-rose-500/40"
+              }`}>
+                <div>
+                  <div className="font-bold text-white flex items-center gap-1.5">
+                    <span>{searxngConnected ? "🟢" : "🔴"} SearXNG 全网检索容器 (8088)</span>
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-0.5">
+                    {searxngConnected ? "新闻检索服务就绪" : "请启动 Docker Desktop 并运行 docker start searxng"}
+                  </div>
+                </div>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                  searxngConnected ? "bg-emerald-500/20 text-emerald-300" : "bg-rose-500/20 text-rose-300"
+                }`}>
+                  {searxngConnected ? "就绪" : "离线"}
+                </span>
+              </div>
+
+              {/* 3. Ollama */}
+              <div className={`p-3 rounded-xl border flex items-center justify-between ${
+                ollamaStatus.connected && ollamaStatus.models.length > 0 ? "bg-emerald-950/20 border-emerald-500/30" : "bg-rose-950/20 border-rose-500/40"
+              }`}>
+                <div>
+                  <div className="font-bold text-white flex items-center gap-1.5">
+                    <span>{ollamaStatus.connected && ollamaStatus.models.length > 0 ? "🟢" : "🔴"} Ollama 本地模型 (11434)</span>
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-0.5">
+                    {ollamaStatus.connected && ollamaStatus.models.length > 0 ? `已加载 ${ollamaStatus.models.length} 个模型 (${selectedOllamaModel})` : "请启动 Ollama 并确认已安装 Qwen 或 Llama 模型"}
+                  </div>
+                </div>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                  ollamaStatus.connected && ollamaStatus.models.length > 0 ? "bg-emerald-500/20 text-emerald-300" : "bg-rose-500/20 text-rose-300"
+                }`}>
+                  {ollamaStatus.connected && ollamaStatus.models.length > 0 ? "就绪" : "离线"}
+                </span>
+              </div>
+
+              {/* 4. Trade Unlock */}
+              <div className={`p-3 rounded-xl border flex items-center justify-between ${
+                isUnlocked ? "bg-emerald-950/20 border-emerald-500/30" : "bg-amber-950/20 border-amber-500/40"
+              }`}>
+                <div>
+                  <div className="font-bold text-white flex items-center gap-1.5">
+                    <span>{isUnlocked ? "🟢" : "🔒"} 交易权限解锁状态</span>
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-0.5">
+                    {isUnlocked ? "交易权限已解锁" : "需要输入 6 位交易密码解锁实盘与自选通道"}
+                  </div>
+                </div>
+                {!isUnlocked ? (
+                  <button
+                    onClick={() => {
+                      setBarrierModalOpen(false);
+                      setUnlockModalOpen(true);
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[10px] shadow"
+                  >
+                    立即解锁 ↗
+                  </button>
+                ) : (
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300">
+                    已解锁
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-800">
+              <button
+                onClick={() => fetchStatus()}
+                className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 font-semibold text-xs transition-all flex items-center gap-1"
+              >
+                🔄 重新检测环境
+              </button>
+              <button
+                onClick={() => setBarrierModalOpen(false)}
+                className="px-3.5 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs transition-all"
+              >
+                我知道了
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

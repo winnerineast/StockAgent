@@ -59,13 +59,16 @@ flowchart TD
 
 ---
 
-## 💡 深度借鉴 vn.py 的 4 大核心量化中枢架构
+## 💡 深度借鉴 vn.py 与 FINOS Legend 的核心架构哲学
 
-针对上班族“以天为单位、低频下班操盘、严禁机器自动下单”的实际业务场景，系统深度借鉴了 vn.py 量化框架的底层精髓：
+针对上班族“以天为单位、低频下班操盘、严禁机器自动下单”的实际业务场景，系统深度融合了 **vn.py 量化风控** 与 **FINOS Legend 机构级数据不变量与语义治理** 的务实精髓：
 
-| 借鉴模块 | vn.py 经典量化设计 | StockAgent 落地实现与文件位置 |
+| 借鉴中枢 | 经典金融工程设计 | StockAgent 务实落地实现与文件位置 |
 | :--- | :--- | :--- |
-| **组合风控与头寸缩放** | `PortfolioStrategy` & `RiskManager` 固定风险预算 | [`quantRiskManager.ts`](file:///c:/Users/lilin/StockAgent/server/src/services/quantRiskManager.ts)：基于 ATR 真实波动率与用户 $G\%$ 目标收益率、$D\%$ 回撤容忍度，反推精确到股数的建议买入量，单标的强制 $\le 35\%$ 组合上限。 |
+| **交易与数据不变量防呆** | **FINOS Legend Class Invariants** 刚性逻辑约束 | [`tradeInvariantValidator.ts`](file:///c:/Users/lilin/StockAgent/server/src/services/tradeInvariantValidator.ts)：防爆仓与防大模型幻觉守门员。强制执行买入资金不超可用上限、单票 $\le 35\%$ 组合上限、止损价严禁倒挂高于现价、卖出不超实盘持仓，大模型输出异常时自动纠偏自愈。 |
+| **组合风控与头寸缩放** | `PortfolioStrategy` & `RiskManager` 固定风险预算 | [`quantRiskManager.ts`](file:///c:/Users/lilin/StockAgent/server/src/services/quantRiskManager.ts)：基于 ATR 真实波动率与用户 $G\%$ 目标收益率、$D\%$ 回撤容忍度，反推精确到股数的建议买入量。 |
+| **决策事实血缘与极速面板** | **FINOS Legend Data Lineage** 端到端数据血缘 | [`PerStockDeductionRetroCard.tsx`](file:///c:/Users/lilin/StockAgent/client/src/components/PerStockDeductionRetroCard.tsx)：拒绝大模型长篇空话，卡片顶部 30 秒看懂 **📊 基本面锚点** + **📰 权威消息催化** + **🏦 资金流与 ATR 防线** 3 大客观硬事实证据链。 |
+| **产业链拓扑与因果传导** | **FINOS Legend Financial Ontology** 领域本体传导 | [`stockKnowledgeBaseData.ts`](file:///c:/Users/lilin/StockAgent/server/src/services/stockKnowledgeBaseData.ts)：内置 50+ 热门美股龙头（NVDA/TSM/ASML/AMD/AVGO/PLTR/COIN/BABA 等）上下游供应链与同业博弈图谱，支持突发事件因果多跳推演。 |
 | **实盘跟踪与归因闭环** | `TradeRecorder` & `PerformanceAnalysis` 绩效归因 | [`deductionVerificationService.ts`](file:///c:/Users/lilin/StockAgent/server/src/services/deductionVerificationService.ts)：点对点比对过去 $T$ 天建议 vs 真实收盘价，三态自动归因（`SUCCESS`/`FAILURE`/`RANDOM_NOISE`），教训经验自动反哺大模型上下文。 |
 | **时态状态机驱动** | `TradingCalendar` & `EventEngine` 交易日历驱动 | [`marketCalendarService.ts`](file:///c:/Users/lilin/StockAgent/server/src/services/marketCalendarService.ts)：划分盘前 (`PRE_MARKET`)、盘中 (`INTRADAY`)、盘后 (`POST_MARKET`) 与周末 (`WEEKEND`)，下班后自动切入盘后复盘与次日推演态。 |
 | **统一网关封装** | `BaseGateway` 原生协议与数据契约封装 | [`moomooAdapter.ts`](file:///c:/Users/lilin/StockAgent/server/src/services/moomooAdapter.ts)：将 MooMoo OpenD 底层 Protobuf/TCP 封装为标准的持仓、资产与盘口接口。 |
@@ -77,14 +80,18 @@ flowchart TD
 1. **严禁机器自动下单 (Zero Automated Execution)**：
    - 彻底避免由于网络波动、API 滑点或极端行情导致的机器强平风险；
    - 每个推荐标的卡片均提供 **「📋 复制下单指令」**，一键复制 `标的 / 买卖方向 / 股数 / 限价`，方便上班族晚上在手机或电脑端自主确认挂单。
-2. **执行顺序屏障 (Preflight Barrier)**：
+2. **⚡ 下班 30 秒极速决策「3 大客观事实证据链」 (3-Pillar Decision Facts)**：
+   - 每张标的卡片醒目呈现 **基本面估值锚点**、**权威要闻催化**与**主力资金/ATR防守线**，直击核心因果，下班 30 秒快速评估挂单决策。
+3. **🛡️ 交易不变量刚性防呆与自愈 (Trade Invariant Guardrails)**：
+   - 任何大模型推演建议均需通过资金充足性、仓位上限与点位单调性检验，点亮安全通过徽章，彻底杜绝 AI 幻觉造成的违规挂单。
+4. **执行顺序屏障 (Preflight Barrier)**：
    - 系统严密把控执行顺序：当且仅当 **OpenD (11111)**、**SearXNG (8088)**、**Ollama 本地模型 (11434)** 与 **交易解锁** 4 项全部就绪后，才正式启动 Step 1 推演流水线。
-3. **Single-Flight 服务端单飞互斥锁与限流**：
+5. **Single-Flight 服务端单飞互斥锁与限流**：
    - 全局拦截并发重复请求，合并在途推演任务；
    - Ollama 推理采用 2-Worker 并发池与 60s 宽裕超时，彻底解决本地显存积压与排队超时问题。
-4. **SearXNG 双通道自动唤起 (Docker + WSL Daemon)**：
+6. **SearXNG 双通道自动唤起 (Docker + WSL Daemon)**：
    - 自动检测并唤醒 WSL Ubuntu 与 Windows Docker 守护进程，无需手动开终端敲命令行启动服务。
-5. **100% 真实数据·零硬编码 (Zero Mock / Hardcoding)**：
+7. **100% 真实数据·零硬编码 (Zero Mock / Hardcoding)**：
    - 彻底移除了所有静态假数据和 `1000.0` 默认兜底，所有行情、净值、现金均直连 OpenD 实盘端口。
 
 ---

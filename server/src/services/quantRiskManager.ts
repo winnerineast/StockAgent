@@ -1,5 +1,6 @@
 import { ActionItem, CapitalSpaceAnalysis, OpenDSnapshotItem } from "../types/stockTypes";
 import { goalDrivenQuantEngine } from "./goalDrivenQuantEngine";
+import { tradeInvariantValidator } from "./tradeInvariantValidator";
 
 export interface DynamicRiskTargetResult {
   targetPrice: number;
@@ -220,7 +221,7 @@ export class QuantRiskManager {
       customAtr,
     });
 
-    return {
+    const alignedAction: ActionItem = {
       ...rawAction,
       estimatedPrice: currentPrice,
       suggestedShares: quantTargets.suggestedShares > 0 ? quantTargets.suggestedShares : rawAction.suggestedShares || 1,
@@ -244,6 +245,16 @@ export class QuantRiskManager {
       perShareRisk: quantTargets.perShareRisk,
       maxRiskBudget: quantTargets.maxRiskBudget,
     };
+
+    // 借鉴 FINOS Legend 类约束与不变量：最后一步执行刚性数据与交易不变量校验防呆与自愈
+    const invariantCheck = tradeInvariantValidator.validateAndEnforce({
+      action: alignedAction,
+      currentPrice,
+      availableCash,
+      totalMarketValue: totalBudget > 0 ? totalBudget : availableCash,
+    });
+
+    return invariantCheck.action;
   }
 }
 

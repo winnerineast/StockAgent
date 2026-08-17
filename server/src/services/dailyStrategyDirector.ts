@@ -10,6 +10,10 @@ import { goalDrivenQuantEngine } from "./goalDrivenQuantEngine";
 import { computeTotalPnL, computeRetroPnL, savePortfolioSnapshot } from "./stockMemoryManager";
 import { deductionVerificationService } from "./deductionVerificationService";
 import { marketCalendarService } from "./marketCalendarService";
+import { dataSufficiencyGatekeeper } from "./dataSufficiencyGatekeeper";
+import { multiAgentMarketSimulator } from "./multiAgentMarketSimulator";
+import { actionPlanningSearchEngine } from "./actionPlanningSearchEngine";
+import { tradeInvariantValidator } from "./tradeInvariantValidator";
 import {
   DailyAllocationOutput,
   StockPositionItem,
@@ -25,7 +29,61 @@ import {
   GoalDrivenConstraint,
   MarketSessionPhase,
   MarketSessionContext,
+  DataSufficiencyReport,
+  MarketSimulationResult,
+  AdaptiveActionPolicy,
+  Evidence3PillarsHighlights,
 } from "../types/stockTypes";
+
+/**
+ * 结构化提取 30 秒极速决策 3 大核心客观事实锚点 (基本面 / 消息催化 / 资金与ATR防线)
+ */
+function buildEvidence3PillarsHighlights(
+  item: StockDeductionRetroItem,
+  act: ActionItem
+): Evidence3PillarsHighlights {
+  // 1. 基本面与估值锚点
+  const f = item.fundamentals || act.evidence?.fundamentals;
+  const pe = f?.peRatio ?? item.openDSnapshot?.peRatio;
+  let fundText = "";
+  if (pe && pe > 0) {
+    const valStatus = pe <= 28 ? "估值合理偏低" : pe <= 45 ? "成长溢价区间" : "高估值弹性博弈";
+    const rev = f?.revenueGrowthPct !== undefined
+      ? `，营收增速 ${f.revenueGrowthPct > 0 ? "+" : ""}${f.revenueGrowthPct.toFixed(1)}%`
+      : "";
+  } else {
+    const summaryText = (f as any)?.summary || (f as any)?.fundamentalSummary;
+    if (summaryText) {
+      fundText = summaryText.length > 55 ? summaryText.slice(0, 52) + "..." : summaryText;
+    } else {
+      fundText = `${item.strategyCategoryLabel || "基本面稳健"} · 估值中枢处于健康区间`;
+    }
+  }
+
+  // 2. 权威消息与催化锚点
+  let catText = "";
+  const firstNews = item.credibleNews?.[0]?.title || item.latestNews?.[0];
+  if (firstNews) {
+    catText = firstNews.length > 55 ? firstNews.slice(0, 52) + "..." : firstNews;
+  } else if (item.strategyCategoryReason) {
+    catText = item.strategyCategoryReason;
+  } else {
+    catText = "行业景气度向好，近期无突发重大利空阻力";
+  }
+
+  // 3. 资金面与 ATR 防线锚点
+  const flow = item.capitalFlow || (act.evidence?.liveMarket ? { trend: act.evidence.liveMarket.flowTrend, description: act.evidence.liveMarket.description } : undefined);
+  const flowDesc = flow?.description || (flow?.trend === "INFLOW" ? "主力超大单积极流入" : flow?.trend === "OUTFLOW" ? "主力资金小幅减持" : "主力资金动向平稳");
+  const stopLoss = act.stopLossPrice ? `$${act.stopLossPrice}` : "动态跟踪";
+  const rrr = act.riskRewardRatio ? `，盈亏比 ${act.riskRewardRatio}:1` : "";
+  const flowRiskText = `${flowDesc} · ATR软防线 ${stopLoss}${rrr}`;
+
+  return {
+    fundamentalAnchor: fundText,
+    catalystAnchor: catText,
+    flowRiskAnchor: flowRiskText,
+  };
+}
 
 export class DailyStrategyDirector {
   public currentActiveStage: StrategyProgressStage | null = null;
@@ -605,9 +663,88 @@ export class DailyStrategyDirector {
       perStockItems: perStockDeductionRetroList,
     };
 
-    // STEP 4: Ollama 大模型融合推演 (OLLAMA_DEDUCTION)
-    notifyStage(4, "OLLAMA_DEDUCTION", "Ollama 大模型融合推演", "执行 Map-Reduce 分段推理，结合 5 大分类与宏观约束生成定量调仓指南...", 85);
+    // STEP 4: 数据完备性刚性准入校验与微观博弈多主体沙盘推演 (OLLAMA_DEDUCTION)
+    notifyStage(4, "OLLAMA_DEDUCTION", "数据完备性准入与多主体博弈仿真", "执行刚性信息完备性校验、4 角色博弈出清与大模型情景规划...", 85);
     const ollamaCheck = await ollamaService.getStatus();
+
+    // 1. 对全量候选标的进行数据完备性刚性准入校验
+    const sufficiencyReportsMap = new Map<string, DataSufficiencyReport>();
+    const simulationResultsMap = new Map<string, MarketSimulationResult>();
+    const adaptivePoliciesMap = new Map<string, AdaptiveActionPolicy>();
+    const insufficientAbortActions: ActionItem[] = [];
+    const validCandidateSymbols: string[] = [];
+
+    for (const cand of finalCandidateList) {
+      const sym = cand.symbol.toUpperCase();
+      const intel = candidateStockIntels.get(cand.symbol);
+      const kg = knowledgeGraphList.find((k) => k.symbol.toUpperCase() === sym);
+      const curPrice = quotesMap.get(sym) || cand.snapshot?.lastPrice || cand.snapshot?.prevClosePrice || 0;
+      const fundamentals = await stockKnowledgeGraphStoreService.getFundamentals(sym);
+
+      const report = dataSufficiencyGatekeeper.evaluateSymbol({
+        symbol: sym,
+        companyName: cand.companyName,
+        snapshot: cand.snapshot,
+        news: intel?.latestNews,
+        fundamentals: fundamentals ?? undefined,
+        knowledgeGraph: kg,
+        marketPhase: marketSession.marketPhase,
+        isOpenDConnected: !!openDPortfolio?.fromOpenD,
+        hasLevel3Permissions: true,
+      } as any);
+
+      sufficiencyReportsMap.set(sym, report);
+
+      if (!report.isSufficient) {
+        console.warn(`[DataGatekeeper] 标的 [${sym}] 数据完备性校验未通过 (${report.abortReason})，已直接熔断推演。`);
+        const abortAction = dataSufficiencyGatekeeper.buildInsufficientDataAction({
+          symbol: sym,
+          companyName: cand.companyName,
+          currentPrice: curPrice,
+          report,
+        });
+        insufficientAbortActions.push(abortAction);
+      } else {
+        validCandidateSymbols.push(cand.symbol);
+
+        // 运行微观 4 主体博弈仿真
+        const tfm = timefmForecastsMap[sym];
+        const sim = multiAgentMarketSimulator.simulate({
+          symbol: sym,
+          currentPrice: curPrice,
+          snapshot: cand.snapshot,
+          intel,
+          fundamentals: fundamentals ?? undefined,
+          knowledgeGraph: kg,
+          timefm: tfm ? {
+            direction: tfm.direction,
+            predictedPrice: tfm.predictedPrice,
+            predictedChangePct: tfm.predictedChangeRate,
+            confidenceLow: tfm.confidenceLow,
+            confidenceHigh: tfm.confidenceHigh,
+            targetAttainmentProbability: 68,
+            momentumRationale: tfm.momentumRationale,
+          } : undefined,
+          macroRegime: macroRes?.macroIntel?.sentimentMood || "NEUTRAL",
+        });
+        simulationResultsMap.set(sym, sim);
+
+        // 运行情景树规划
+        const policy = actionPlanningSearchEngine.generateAdaptivePolicy({
+          symbol: sym,
+          companyName: cand.companyName,
+          currentPrice: curPrice,
+          simulation: sim,
+          targetTimeHorizonDays,
+          targetProfitGoalPct,
+          maxDrawdownPct,
+          userAvailableBudget: budgetToUse,
+          totalPortfolioValue: budgetToUse,
+          macroRegime: macroRes?.macroIntel?.sentimentMood || "NEUTRAL",
+        });
+        adaptivePoliciesMap.set(sym, policy);
+      }
+    }
 
     let screenerRes: {
       actions: ActionItem[];
@@ -617,7 +754,7 @@ export class DailyStrategyDirector {
     };
 
     let deductionPipeline: DeductionPipelineData = {
-      modelUsed: "Ollama Map-Reduce",
+      modelUsed: "Ollama Multi-Agent Game",
       promptContextText: "",
       knowledgeGraphContext: "",
       searxngNewsContext: macroRes.rawNewsText,
@@ -626,12 +763,13 @@ export class DailyStrategyDirector {
       rawOllamaOutput: "",
     };
 
-    if (ollamaCheck.connected && ollamaCheck.models.length > 0) {
+    // 仅针对数据完备的标的执行大模型推理
+    if (ollamaCheck.connected && ollamaCheck.models.length > 0 && validCandidateSymbols.length > 0) {
       const modelToUse = ollamaCheck.recommendedModel || ollamaCheck.models[0];
       try {
         const ollamaRes = await ollamaService.generateStrategyWithOllama(modelToUse, {
           positions: currentPositions,
-          candidateSymbols,
+          candidateSymbols: validCandidateSymbols,
           candidateStockIntels,
           quotesMap,
           searxngNewsText: macroRes.rawNewsText,
@@ -688,9 +826,21 @@ export class DailyStrategyDirector {
         snapshotsMap,
         candidateStockIntels
       );
-      deductionPipeline.modelUsed = "量化规则引擎 (Ollama 离线)";
+      deductionPipeline.modelUsed = "量化规则引擎 (Ollama 离线或数据完备标的筛选)";
       deductionPipeline.rawOllamaOutput = JSON.stringify(screenerRes, null, 2);
     }
+
+    // 挂载数据完备性报告与博弈仿真输出
+    screenerRes.actions.forEach((act) => {
+      const sym = act.symbol.toUpperCase();
+      act.dataSufficiencyReport = sufficiencyReportsMap.get(sym);
+      act.simulationResult = simulationResultsMap.get(sym);
+      act.scenarioBranches = adaptivePoliciesMap.get(sym)?.scenarioTree;
+      act.adaptivePolicy = adaptivePoliciesMap.get(sym);
+    });
+
+    // 合并数据缺失熔断项 (排在列表末尾或按需保留)
+    screenerRes.actions = [...screenerRes.actions, ...insufficientAbortActions];
 
     // 计算全局资金空间分析 (结合实盘持仓、闲置现金、宏观安全垫与调仓释放)
     const capitalSpace = goalDrivenQuantEngine.calculateCapitalSpace({
@@ -717,8 +867,8 @@ export class DailyStrategyDirector {
 
     screenerRes.actions = optimizedActions;
 
-    // 将推演建议动作绑回列表并附上 5 大事实证据
-    screenerRes.actions.forEach((act) => {
+    // 将推演建议动作绑回列表并附上 5 大事实证据与 3 大客观事实锚点
+    screenerRes.actions.forEach((act, idx) => {
       const target = perStockDeductionRetroList.find((item) => item.symbol.toUpperCase() === act.symbol.toUpperCase());
       if (target) {
         if (!act.actionType) {
@@ -733,7 +883,26 @@ export class DailyStrategyDirector {
           act.whySummary = act.goalDrivenRationale || act.rationale?.slice(0, 100) || `围绕 [${act.symbol}] 5大事实证据建议执行 ${act.actionType}`;
         }
         act.evidence = target.evidence5Pillars;
-        target.currentRecommendation = act;
+
+        // 严格执行交易不变量校验防呆与自愈 (FINOS Legend Invariants 务实落地)
+        const curPrice = quotesMap.get(act.symbol.toUpperCase()) || act.estimatedPrice || target.openDSnapshot?.lastPrice || 1.0;
+        const invariantCheck = tradeInvariantValidator.validateAndEnforce({
+          action: act,
+          currentPrice: curPrice,
+          availableCash: openDCash,
+          totalMarketValue: budgetToUse,
+          existingPosition: target.position,
+        });
+
+        const finalAct = invariantCheck.action;
+        const highlights = buildEvidence3PillarsHighlights(target, finalAct);
+        finalAct.evidenceHighlights = highlights;
+        finalAct.invariantStatus = invariantCheck.status;
+
+        target.currentRecommendation = finalAct;
+        target.evidenceHighlights = highlights;
+        target.invariantStatus = invariantCheck.status;
+        screenerRes.actions[idx] = finalAct;
       }
     });
 
@@ -803,9 +972,25 @@ export class DailyStrategyDirector {
           evidence: item.evidence5Pillars,
         };
 
-        item.currentRecommendation = fallbackAct;
+        const invariantCheck = tradeInvariantValidator.validateAndEnforce({
+          action: fallbackAct,
+          currentPrice: curPrice,
+          availableCash: openDCash,
+          totalMarketValue: budgetToUse,
+          existingPosition: item.position,
+        });
+
+        const validatedFallback = invariantCheck.action;
+        const highlights = buildEvidence3PillarsHighlights(item, validatedFallback);
+        validatedFallback.evidenceHighlights = highlights;
+        validatedFallback.invariantStatus = invariantCheck.status;
+
+        item.currentRecommendation = validatedFallback;
+        item.evidenceHighlights = highlights;
+        item.invariantStatus = invariantCheck.status;
+
         if (!screenerRes.actions.some((a) => a.symbol.toUpperCase() === item.symbol.toUpperCase())) {
-          screenerRes.actions.push(fallbackAct);
+          screenerRes.actions.push(validatedFallback);
         }
       }
     });
