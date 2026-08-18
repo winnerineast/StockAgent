@@ -544,7 +544,113 @@ export class MooMooAdapter {
       );
     });
   }
+
+  private marketDynamicsCache: { data: any; timestamp: number } | null = null;
+
+  public async fetchMarketDynamicsFromOpenD(): Promise<{
+    tsi: number;
+    vci: number;
+    marketBreadthPct: number;
+    spyPrice: number;
+    spyAtr: number;
+    vixLevel: number;
+    fromOpenD: boolean;
+  }> {
+    const now = Date.now();
+    if (this.marketDynamicsCache && now - this.marketDynamicsCache.timestamp < 300000) {
+      return this.marketDynamicsCache.data;
+    }
+
+    const isAlive = await openDaemonManager.checkOpenDAlive();
+    if (!isAlive) {
+      return {
+        tsi: 0.0,
+        vci: 0.0,
+        marketBreadthPct: 50.0,
+        spyPrice: 500.0,
+        spyAtr: 5.0,
+        vixLevel: 15.0,
+        fromOpenD: false,
+      };
+    }
+
+    const bridgeScript = getMoomooBridgeScriptPath();
+    return new Promise((resolve) => {
+      exec(
+        `python "${bridgeScript}" --action=market_dynamics`,
+        { encoding: "utf-8", timeout: 20000, maxBuffer: 10 * 1024 * 1024 },
+        (_err: any, stdout: string) => {
+          try {
+            const data = extractJsonFromBridgeOutput(stdout);
+            if (data && data.success) {
+              const res = {
+                tsi: Number(data.tsi ?? 0.0),
+                vci: Number(data.vci ?? 0.0),
+                marketBreadthPct: Number(data.marketBreadthPct ?? 50.0),
+                spyPrice: Number(data.spyPrice ?? 500.0),
+                spyAtr: Number(data.spyAtr ?? 5.0),
+                vixLevel: Number(data.vixLevel ?? 15.0),
+                fromOpenD: true,
+              };
+              this.marketDynamicsCache = { data: res, timestamp: Date.now() };
+              return resolve(res);
+            }
+          } catch (e) {}
+          resolve({
+            tsi: 0.0,
+            vci: 0.0,
+            marketBreadthPct: 50.0,
+            spyPrice: 500.0,
+            spyAtr: 5.0,
+            vixLevel: 15.0,
+            fromOpenD: false,
+          });
+        }
+      );
+    });
+  }
+
+  public async fetchHistoricalReturnsMatrix(
+    symbols: string[]
+  ): Promise<{
+    symbols: string[];
+    priceSeries: Record<string, number[]>;
+    covMatrix: number[][];
+  }> {
+    if (!symbols || symbols.length === 0) {
+      return { symbols: [], priceSeries: {}, covMatrix: [] };
+    }
+
+    const isAlive = await openDaemonManager.checkOpenDAlive();
+    if (!isAlive) {
+      return { symbols: [], priceSeries: {}, covMatrix: [] };
+    }
+
+    const bridgeScript = getMoomooBridgeScriptPath();
+    const cleanSyms = Array.from(new Set(symbols.map((s) => s.trim().toUpperCase()))).join(",");
+
+    return new Promise((resolve) => {
+      exec(
+        `python "${bridgeScript}" --action=historical_returns --symbols="${cleanSyms}"`,
+        { encoding: "utf-8", timeout: 20000, maxBuffer: 10 * 1024 * 1024 },
+        (_err: any, stdout: string) => {
+          try {
+            const data = extractJsonFromBridgeOutput(stdout);
+            if (data && data.success) {
+              return resolve({
+                symbols: data.symbols || [],
+                priceSeries: data.priceSeries || {},
+                covMatrix: data.covMatrix || [],
+              });
+            }
+          } catch (e) {}
+          resolve({ symbols: [], priceSeries: {}, covMatrix: [] });
+        }
+      );
+    });
+  }
 }
 
 export const moomooAdapter = new MooMooAdapter();
+
 

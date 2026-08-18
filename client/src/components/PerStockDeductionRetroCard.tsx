@@ -184,6 +184,14 @@ interface PerStockDeductionRetroCardProps {
     bearishRiskPoint?: string;
     bullBearVerdict?: string;
     usSpecialIntel?: UsStockSpecialIntelProps;
+    liquidityFragility?: {
+      bidAskSpreadPct: number;
+      turnoverRate: number;
+      liquidityFragilityIndex: number;
+      slippageBufferMin: number;
+      slippageBufferMax: number;
+      marketImpactWarning?: string;
+    };
   };
   onOpenKnowledgeGraph: (symbol: string) => void;
   onOpenDeductionModal?: (item: any) => void;
@@ -617,6 +625,20 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
                     </span>
                     <span className="text-[10px] text-slate-400">
                       (PCR: {(item.usSpecialIntel?.unusualOptionActivity?.callPutVolumeRatio || rec?.usSpecialIntel?.unusualOptionActivity?.callPutVolumeRatio)?.toFixed(2)})
+                    </span>
+                  </div>
+                )}
+
+                {/* 🛡️ TradeMaster 微观做市商价差与智能挂单滑点保护 */}
+                {(item.liquidityFragility || (rec as any)?.liquidityFragility) && (
+                  <div className="flex items-center gap-1.5 p-1.5 px-2.5 rounded-lg bg-slate-900/90 border border-slate-800">
+                    <ShieldAlert className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                    <span className="text-slate-400 text-[11px]">挂单滑点保护:</span>
+                    <span className="text-[11px] font-bold text-emerald-300 font-mono">
+                      ${(item.liquidityFragility || (rec as any)?.liquidityFragility).slippageBufferMin} ~ ${(item.liquidityFragility || (rec as any)?.liquidityFragility).slippageBufferMax}
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      (价差: {(item.liquidityFragility || (rec as any)?.liquidityFragility).bidAskSpreadPct}%)
                     </span>
                   </div>
                 )}

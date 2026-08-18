@@ -115,6 +115,7 @@ export interface MarketSimulationResult {
   gammaSupportLevel?: number;      // 做市商Gamma防御位
   institutionalAccumulationFloor?: number; // 机构吸筹托底价
   ctaBreakoutTrigger?: number;     // CTA触发追涨/杀跌临界点
+  liquidityFragility?: LiquidityFragilityInfo; // 微观流动性脆弱度与滑点缓冲区间
 }
 
 export interface ScenarioBranch {
@@ -516,6 +517,7 @@ export interface StockDeductionRetroItem {
   bearishRiskPoint?: string;                       // 🔴 空方最严苛反驳点/最大下行破位风险
   bullBearVerdict?: string;                        // ⚖️ 多空交锋最终裁决与防守底线
   usSpecialIntel?: UsStockSpecialIntel;            // 📅 美股财报静默期与期权异动雷达
+  liquidityFragility?: LiquidityFragilityInfo;     // 🛡️ 微观流动性脆弱度与智能挂单滑点保护
 }
 
 export interface StrategyProgressStage {
@@ -606,6 +608,7 @@ export interface DailyMacroSnapshotDTO {
   topNews: CredibleNewsItem[];
   promptContext: string;
   isLiveRealtime?: boolean;
+  marketDynamics?: MarketDynamicsReport; // 📊 市场动力学状态机报告 (MDM)
 }
 
 export interface MacroMarketIntel {
@@ -686,10 +689,123 @@ export interface MarketSessionContext {
   isSimulated?: boolean;         // 是否处于时空穿梭模拟模式
 }
 
+// =========================================================================
+// 🚀 TradeMaster & FinAgent 深度量化与反思扩展契约
+// =========================================================================
+
+// 1. 市场动力学状态机 (TradeMaster MDM)
+export type MarketDynamicsRegime =
+  | "TRENDING_BULL"              // 单边主升牛市
+  | "TRENDING_BEAR"              // 单边下行熊市
+  | "HIGH_VOLATILITY_CHOP"       // 高波宽幅洗盘震荡
+  | "COMPRESSED_CONSOLIDATION";  // 低波窄幅蓄势整理
+
+export interface MarketDynamicsReport {
+  regime: MarketDynamicsRegime;
+  regimeLabel: string;
+  trendStrengthIndex: number;    // TSI 趋势强度 (-1.0 ~ +1.0)
+  volatilityClusteringIndex: number; // VCI 波动率聚集度 (如 -2.0 ~ +3.0)
+  marketBreadthPct: number;      // 市场广度 (标普/纳指成分股站上20日线比例 %)
+  adaptedRiskParams: {
+    maxPortfolioCapPct: number;  // 动态总仓位上限 (30% ~ 85%)
+    singleStockCapPct: number;   // 动态单票上限 (15% ~ 35%)
+    atrStopMultiplier: number;   // 动态 ATR 止损乘数 (1.2x ~ 2.2x)
+  };
+  rationale: string;
+  evaluatedAt: string;
+}
+
+// 2. 微观流动性脆弱性与滑点保护缓冲 (Microstructure Slippage Protection)
+export interface LiquidityFragilityInfo {
+  bidAskSpreadPct: number;       // 做市商买卖盘价差率 (%)
+  turnoverRate5d: number;        // 5日平均换手率 (%)
+  liquidityFragilityIndex: number;// 流动性踩踏脆弱性指数 (0 ~ 100)
+  slippageBufferMin: number;     // 考虑流动性支撑的挂单下界 ($)
+  slippageBufferMax: number;     // 考虑防追高滑点的挂单上界 ($)
+  slippageWarning?: string;      // 踩踏与滑点预警提示
+}
+
+// 3. 组合权重凸优化求解契约 (TradeMaster EIIE / Markowitz Risk-Parity)
+export interface PortfolioAllocationCandidate {
+  symbol: string;
+  companyName?: string;
+  expectedReturnPct: number;
+  volatilityPct: number;
+  sector: string;
+  confidenceScore: number;
+  currentPrice: number;
+}
+
+export interface PortfolioAllocationResult {
+  optimalWeights: Record<string, number>; // symbol -> weight (0.0 ~ 0.35)
+  cashWeight: number;                     // 留存现金比例 (0.0 ~ 1.0)
+  allocatedCapitalMap: Record<string, number>; // symbol -> $ allocated
+  suggestedSharesMap: Record<string, number>;  // symbol -> exact integer shares
+  expectedSharpeRatio: number;
+  sectorExposure: Record<string, number>; // sector -> total weight
+  allocationExplanation: string;
+}
+
+// 4. PRUDEX-Compass 6 维综合评估体系 (TradeMaster Benchmark)
+export interface PrudexRadarMetric {
+  name: string;
+  value: string | number;
+  description: string;
+}
+
+export interface PrudexRadarAxis {
+  axis: "P" | "R" | "U" | "D" | "E" | "X";
+  axisName: string;
+  score: number;               // 0 ~ 100
+  benchmark: number;           // 行业基准分 (如 65)
+  subMetrics: PrudexRadarMetric[];
+}
+
+export interface PrudexCompassScore {
+  overallScore: number;        // 综合体检得分 (0 ~ 100)
+  profitabilityScore: number;  // P: 收益力 (Sharpe, Win Rate, Annualized Return)
+  riskControlScore: number;    // R: 风控力 (Max Drawdown, Sortino, Downside Risk)
+  universalityScore: number;   // U: 周期普适性 (Regime Stability)
+  diversityScore: number;      // D: 持仓多样性 (Sector HHI Index)
+  reliabilityScore: number;    // E: 置信校准度 (Expected Calibration Error)
+  explainabilityScore: number; // X: 证据可解释性 (5-Pillars Completeness)
+  radarAxes: PrudexRadarAxis[];
+  diagnosisAdvice: string[];   // 针对薄弱维度的诊断与改进指引
+  samplePeriodDays: number;
+  totalEvaluatedLogs: number;
+  evaluatedAt: string;
+}
+
+// 5. FinAgent 模式的双层反思架构 (Dual-Level Memory Reflection)
+export interface DualLevelReflectionItem {
+  id: string;
+  level: "L1_TACTICAL" | "L2_STRATEGIC";
+  levelLabel: string;          // "🎯 L1 单票战术反思" | "🏛️ L2 全局战略纪律"
+  symbol?: string;             // L1 绑定单票，L2 为 "GLOBAL"
+  category: "ENTRY_DISCIPLINE" | "STOP_LOSS_RULE" | "TAKE_PROFIT_RULE" | "EVENT_CATALYST" | "RISK_AVOIDANCE";
+  ruleSummary: string;
+  triggerContext: string;
+  enforcementAction: string;
+  sampleCount: number;
+  confidenceWeight: number;
+}
+
+export interface DualLevelReflectionReport {
+  tacticalReflections: DualLevelReflectionItem[];
+  strategicDisciplines: DualLevelReflectionItem[];
+  totalPrinciplesCount: number;
+  activeEnforcedCount: number;
+  latestReinforcedDate: string;
+}
+
 export interface DailyAllocationOutput {
   marketOverview: string;
   macroIntel?: MacroMarketIntel;
   macroSnapshot?: DailyMacroSnapshotDTO;
+  marketDynamics?: MarketDynamicsReport; // 📊 市场动力学状态机
+  prudexCompass?: PrudexCompassScore;    // 🧭 PRUDEX-Compass 6 维复盘罗盘
+  dualLevelMemory?: DualLevelReflectionReport; // 🧠 FinAgent 双层反思原则库
+  portfolioAllocation?: PortfolioAllocationResult; // 📐 组合权重优化结果
   marketSession?: MarketSessionContext; // 美股时空时态锚定上下文
   capitalSpace?: CapitalSpaceAnalysis;
   goalConstraints?: GoalDrivenConstraint;
@@ -705,4 +821,5 @@ export interface DailyAllocationOutput {
   recentlyClearedPositions?: StockPositionItem[];
   narrativeReport: string;
 }
+
 

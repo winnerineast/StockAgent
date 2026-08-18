@@ -29,6 +29,7 @@ import { DeductionProgressStepper, StageStep } from "./DeductionProgressStepper"
 import { PerStockDeductionRetroCard } from "./PerStockDeductionRetroCard";
 import { MacroSectorStudioCard } from "./MacroSectorStudioCard";
 import { SingleStockDeductionModal } from "./SingleStockDeductionModal";
+import { RetrospectiveTab } from "./RetrospectiveTab";
 
 export interface MacroMarketIntel {
   sentimentMood: "BULLISH" | "BEARISH" | "NEUTRAL" | "VOLATILE";
@@ -227,6 +228,7 @@ export const DeductionRetroStudioTab: React.FC<DeductionRetroStudioTabProps> = (
 }) => {
   const [customBudget, setCustomBudget] = useState<number>(1000);
   const [riskPreference, setRiskPreference] = useState<string>("BALANCED");
+  const [studioView, setStudioView] = useState<"STUDIO" | "PRUDEX_RETRO">("STUDIO");
   const [filterCategory, setFilterCategory] = useState<
     "ALL" | "HIGH_CERTAINTY" | "REBALANCE" | "HOLDING" | "WATCHLIST" | "EXPERIENCE" | "LESSON" | "CLEARED"
   >("ALL");
@@ -466,10 +468,46 @@ export const DeductionRetroStudioTab: React.FC<DeductionRetroStudioTabProps> = (
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* 🚀 STEP 1: MooMoo OpenD 实盘持仓、资产净值与自选股连通 */}
-      {/* ========================================================================= */}
-      <div className="relative overflow-hidden rounded-2xl space-y-4">
+      {/* 🌟 操盘推演中枢 vs PRUDEX 6维质量评估与双层原则库 切换 Tab */}
+      <div className="flex items-center justify-between gap-3 p-1.5 rounded-2xl bg-slate-950/80 border border-slate-800">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => setStudioView("STUDIO")}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+              studioView === "STUDIO"
+                ? "bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20"
+                : "text-slate-400 hover:text-white bg-slate-900/60"
+            }`}
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>🎯 今日实盘推演与决策中枢 (Daily Deduction Studio)</span>
+          </button>
+          <button
+            onClick={() => setStudioView("PRUDEX_RETRO")}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+              studioView === "PRUDEX_RETRO"
+                ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/20 ring-1 ring-indigo-400"
+                : "text-slate-400 hover:text-white bg-slate-900/60"
+            }`}
+          >
+            <Compass className="w-4 h-4 text-indigo-400" />
+            <span>🧭 PRUDEX 6维体检 & FinAgent 原则库 (Retro & Quality Radar)</span>
+          </button>
+        </div>
+      </div>
+
+      {studioView === "PRUDEX_RETRO" ? (
+        <RetrospectiveTab
+          retrospectives={retrospectives}
+          loading={loading}
+          onTriggerRetro={onStartDeduction || (() => {})}
+        />
+      ) : (
+        <>
+          {/* ========================================================================= */}
+          {/* 🚀 STEP 1: MooMoo OpenD 实盘持仓、资产净值与自选股连通 */}
+          {/* ========================================================================= */}
+          <div className="relative overflow-hidden rounded-2xl space-y-4">
         <StepSyncOverlay
           status={step1Status}
           stepNumber={1}
@@ -895,6 +933,8 @@ export const DeductionRetroStudioTab: React.FC<DeductionRetroStudioTabProps> = (
           </div>
         </div>
       </div>
+      </>
+      )}
 
       {/* 🌟 目标驱动与消除迷茫度单股独立全景推演控制舱 (支持随时一键关闭返回主页面) */}
       {selectedStockForModal && (

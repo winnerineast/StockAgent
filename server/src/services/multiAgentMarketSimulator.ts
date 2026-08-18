@@ -259,6 +259,20 @@ export class MultiAgentMarketSimulator {
     );
     const ctaBreakoutTrigger = Number((basePrice * 1.035).toFixed(2));
 
+    // 计算微观做市商价差与智能挂单滑点保护区间 (Microstructure Slippage Buffer)
+    const effectiveTurnover = snapshot?.turnoverRate || 1.5;
+    const bidAskSpreadPct = Number(Math.max(0.05, Math.min(1.2, 0.35 / (effectiveTurnover > 0 ? effectiveTurnover : 1.0))).toFixed(2));
+    const slippageBufferMin = Number(
+      Math.max(0.01, equilibriumPriceCenter * (1 - (0.008 + (liquidityFragilityScore / 100) * 0.015))).toFixed(2)
+    );
+    const slippageBufferMax = Number(
+      (equilibriumPriceCenter * (1 + (0.004 + (bidAskSpreadPct / 100) * 0.4))).toFixed(2)
+    );
+    const slippageWarning =
+      liquidityFragilityScore >= 60
+        ? "⚠️ 盘口博弈分歧度较高，做市商价差拉大，建议严格在限价下界低吸，切勿以市价追高。"
+        : undefined;
+
     return {
       symbol: symbol.toUpperCase(),
       simulationRounds: 2,
@@ -270,6 +284,14 @@ export class MultiAgentMarketSimulator {
       gammaSupportLevel,
       institutionalAccumulationFloor,
       ctaBreakoutTrigger,
+      liquidityFragility: {
+        bidAskSpreadPct,
+        turnoverRate5d: turnover,
+        liquidityFragilityIndex: liquidityFragilityScore,
+        slippageBufferMin,
+        slippageBufferMax,
+        slippageWarning,
+      },
     };
   }
 }

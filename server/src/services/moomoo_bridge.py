@@ -11,7 +11,7 @@ def output_json(obj):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="MooMoo OpenD Python Bridge")
-    parser.add_argument("--action", type=str, default="portfolio", choices=["portfolio", "watchlist", "snapshots", "capital_flow", "market_universe", "full_scan", "macro_sectors", "timefm_forecast", "unlock", "check_unlock"])
+    parser.add_argument("--action", type=str, default="portfolio", choices=["portfolio", "watchlist", "snapshots", "capital_flow", "market_universe", "full_scan", "macro_sectors", "timefm_forecast", "market_dynamics", "historical_returns", "unlock", "check_unlock"])
     parser.add_argument("--symbols", type=str, default="")
     parser.add_argument("--password", type=str, default="")
     return parser.parse_args()
@@ -550,6 +550,145 @@ def run_check_unlock():
             'error': str(e)
         })
 
+def run_market_dynamics():
+    try:
+        from moomoo import OpenQuoteContext, KLType
+        import numpy as np
+
+        ctx = OpenQuoteContext(host='127.0.0.1', port=11111)
+        
+        # 1. 获取 SPY 历史日 K 线计算 TSI 与 ATR14
+        ret_spy, df_spy, _ = ctx.request_history_kline('US.SPY', start='', end='', ktype=KLType.K_DAY, max_count=60)
+        spy_tsi = 0.0
+        spy_atr = 5.0
+        spy_last = 500.0
+        if ret_spy == 0 and not df_spy.empty and len(df_spy) >= 20:
+            closes = df_spy['close'].astype(float).values
+            highs = df_spy['high'].astype(float).values
+            lows = df_spy['low'].astype(float).values
+            spy_last = float(closes[-1])
+            
+            # 计算 EMA20 和 EMA50
+            ema20 = float(np.mean(closes[-20:])) if len(closes) >= 20 else spy_last
+            ema50 = float(np.mean(closes[-50:])) if len(closes) >= 50 else float(np.mean(closes))
+            
+            # 计算最近 14 日 ATR
+            trs = []
+            for i in range(1, min(15, len(closes))):
+                tr = max(highs[-i] - lows[-i], abs(highs[-i] - closes[-i-1]), abs(lows[-i] - closes[-i-1]))
+                trs.append(tr)
+            spy_atr = float(np.mean(trs)) if trs else 5.0
+            spy_atr = max(0.5, spy_atr)
+            
+            spy_tsi = float((ema20 - ema50) / spy_atr)
+            # 归一化到 -1.0 ~ +1.0
+            spy_tsi = float(np.clip(spy_tsi / 2.0, -1.0, 1.0))
+
+        # 2. 获取 UVXY (VIX Proxy) 计算 VCI (波动率聚集度)
+        ret_vix, df_vix, _ = ctx.request_history_kline('US.UVXY', start='', end='', ktype=KLType.K_DAY, max_count=60)
+        vci = 0.0
+        vix_current = 15.0
+        if ret_vix == 0 and not df_vix.empty and len(df_vix) >= 10:
+            vix_closes = df_vix['close'].astype(float).values
+            vix_current = float(vix_closes[-1])
+            mean_vix = float(np.mean(vix_closes))
+            std_vix = float(np.std(vix_closes))
+            std_vix = max(0.1, std_vix)
+            vci = float((vix_current - mean_vix) / std_vix)
+            vci = float(np.clip(vci, -3.0, 3.0))
+
+        # 3. 计算 11 大行业板块中站上 20 日均线的比例 (Market Breadth)
+        sector_codes = ['US.SMH', 'US.XLK', 'US.XLC', 'US.XLF', 'US.XLE', 'US.XLI', 'US.XLY', 'US.XLV', 'US.XLP', 'US.XLU', 'US.XLRE']
+        above_20d_count = 0
+        total_valid = 0
+        for scode in sector_codes:
+            try:
+                r_s, df_s, _ = ctx.request_history_kline(scode, start='', end='', ktype=KLType.K_DAY, max_count=25)
+                if r_s == 0 and not df_s.empty and len(df_s) >= 20:
+                    c_s = df_s['close'].astype(float).values
+                    ma20 = np.mean(c_s[-20:])
+                    if c_s[-1] >= ma20:
+                        above_20d_count += 1
+                    total_valid += 1
+            except Exception:
+                pass
+        
+        breadth_pct = float(round((above_20d_count / max(1, total_valid)) * 100.0, 1)) if total_valid > 0 else 55.0
+
+        ctx.close()
+
+        output_json({
+            'success': True,
+            'tsi': round(spy_tsi, 3),
+            'vci': round(vci, 3),
+            'marketBreadthPct': breadth_pct,
+            'spyPrice': spy_last,
+            'spyAtr': round(spy_atr, 2),
+            'vixLevel': round(vix_current, 2)
+        })
+    except Exception as e:
+        output_json({
+            'success': False,
+            'error': str(e),
+            'tsi': 0.0,
+            'vci': 0.0,
+            'marketBreadthPct': 50.0
+        })
+
+def run_historical_returns(symbols_str: str):
+    try:
+        from moomoo import OpenQuoteContext, KLType
+        import numpy as np
+
+        raw_symbols = [s.strip().upper() for s in symbols_str.split(',') if s.strip()]
+        if not raw_symbols:
+            output_json({'success': True, 'symbols': [], 'covMatrix': []})
+            return
+
+        ctx = OpenQuoteContext(host='127.0.0.1', port=11111)
+        series_map = {}
+        returns_list = []
+        valid_symbols = []
+
+        for sym in raw_symbols[:8]:
+            code = f"US.{sym}" if not sym.startswith("US.") and not sym.startswith("HK.") else sym
+            try:
+                ret, df, _ = ctx.request_history_kline(code, start='', end='', ktype=KLType.K_DAY, max_count=35)
+                if ret == 0 and not df.empty and len(df) >= 10:
+                    closes = df['close'].astype(float).values
+                    returns = np.diff(closes) / closes[:-1]
+                    series_map[sym] = [round(float(p), 2) for p in closes]
+                    returns_list.append(returns[-20:])
+                    valid_symbols.append(sym)
+            except Exception:
+                pass
+        
+        ctx.close()
+
+        cov_matrix = []
+        if len(returns_list) >= 2:
+            min_len = min(len(r) for r in returns_list)
+            aligned_returns = np.array([r[-min_len:] for r in returns_list])
+            cov_np = np.cov(aligned_returns)
+            cov_matrix = [[round(float(val) * 252, 6) for val in row] for row in cov_np]
+        elif len(returns_list) == 1:
+            var_val = float(np.var(returns_list[0]) * 252)
+            cov_matrix = [[round(var_val, 6)]]
+
+        output_json({
+            'success': True,
+            'symbols': valid_symbols,
+            'priceSeries': series_map,
+            'covMatrix': cov_matrix
+        })
+    except Exception as e:
+        output_json({
+            'success': False,
+            'error': str(e),
+            'symbols': [],
+            'covMatrix': []
+        })
+
 if __name__ == "__main__":
     try:
         args = parse_args()
@@ -567,6 +706,10 @@ if __name__ == "__main__":
             run_macro_sectors()
         elif args.action == "timefm_forecast":
             run_timefm_forecast(args.symbols)
+        elif args.action == "market_dynamics":
+            run_market_dynamics()
+        elif args.action == "historical_returns":
+            run_historical_returns(args.symbols)
         elif args.action == "unlock":
             run_unlock(args.password)
         elif args.action == "check_unlock":

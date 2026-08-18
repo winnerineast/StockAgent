@@ -200,6 +200,92 @@ export class MemoryConsolidationService {
   }
 
   /**
+   * 获取 FinAgent 风格的双层反思记忆完整报告 (Dual-Level Reflection Report)
+   */
+  public async getDualLevelMemoryReport(
+    portfolioId: string = "default-portfolio"
+  ): Promise<{
+    tacticalReflections: any[];
+    strategicDisciplines: any[];
+    totalPrinciplesCount: number;
+    activeEnforcedCount: number;
+    latestReinforcedDate: string;
+  }> {
+    const records = await prisma.stockTradingMemoryStore.findMany({
+      where: { portfolioId, isArchived: false },
+      orderBy: { confidenceWeight: "desc" },
+    });
+
+    const tactical: any[] = [];
+    const strategic: any[] = [];
+    let latestDate = new Date().toISOString().split("T")[0];
+
+    for (const r of records) {
+      const dynamicWeight = this.calculateDecayWeight(r.lastReinforcedDate);
+      if (dynamicWeight < 0.12) continue;
+
+      if (r.lastReinforcedDate > latestDate) {
+        latestDate = r.lastReinforcedDate;
+      }
+
+      const item = {
+        id: r.id,
+        level: r.principleType === "GLOBAL_DISCIPLINE" ? "L2_STRATEGIC" : "L1_TACTICAL",
+        levelLabel: r.principleType === "GLOBAL_DISCIPLINE" ? "🏛️ L2 全局战略守则" : `🎯 L1 ${r.symbol} 战术反思`,
+        symbol: r.symbol,
+        category: r.category,
+        ruleSummary: r.title,
+        triggerContext: r.distilledRule,
+        enforcementAction: r.category === "STOP_LOSS_RULE" ? "触发刚性截断防线" : "优化挂单安全区间",
+        sampleCount: r.sampleCount,
+        confidenceWeight: Number(dynamicWeight.toFixed(2)),
+      };
+
+      if (r.principleType === "GLOBAL_DISCIPLINE" || r.symbol === "GLOBAL" || r.sampleCount >= 3) {
+        strategic.push(item);
+      } else {
+        tactical.push(item);
+      }
+    }
+
+    // 若无全局纪律，提供内置冷启动经典原则
+    if (strategic.length === 0) {
+      strategic.push({
+        id: "default-strategic-1",
+        level: "L2_STRATEGIC",
+        levelLabel: "🏛️ L2 全局战略守则",
+        symbol: "GLOBAL",
+        category: "STOP_LOSS_RULE",
+        ruleSummary: "大盘极端下行时刚性控制总风险敞口",
+        triggerContext: "在 TRENDING_BEAR 或高波动率 VCI 偏离时，严禁逆势盲目抄底重仓，最大持仓压缩至 30% 以下。",
+        enforcementAction: "触发刚性截断防线",
+        sampleCount: 5,
+        confidenceWeight: 0.95,
+      });
+      strategic.push({
+        id: "default-strategic-2",
+        level: "L2_STRATEGIC",
+        levelLabel: "🏛️ L2 全局战略守则",
+        symbol: "GLOBAL",
+        category: "ENTRY_DISCIPLINE",
+        ruleSummary: "上班族下班挂单滑点防护守则",
+        triggerContext: "盘前委托必须在 EntryZone.min 附近挂限价单，严防开盘集合竞价冲高回落被套。",
+        enforcementAction: "优化挂单安全区间",
+        sampleCount: 4,
+        confidenceWeight: 0.90,
+      });
+    }
+
+    return {
+      tacticalReflections: tactical,
+      strategicDisciplines: strategic,
+      totalPrinciplesCount: tactical.length + strategic.length,
+      activeEnforcedCount: strategic.length,
+      latestReinforcedDate: latestDate,
+    };
+  }
+
+  /**
    * 格式化原则库文本，用于注入大模型系统指令 (Prompt Context Injection)
    */
   public formatPrinciplesForPrompt(principles: ConsolidatedPrincipleItem[]): string {
@@ -216,3 +302,4 @@ export class MemoryConsolidationService {
 }
 
 export const memoryConsolidationService = MemoryConsolidationService.getInstance();
+

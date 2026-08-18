@@ -14,6 +14,10 @@ import { dataSufficiencyGatekeeper } from "./dataSufficiencyGatekeeper";
 import { multiAgentMarketSimulator } from "./multiAgentMarketSimulator";
 import { actionPlanningSearchEngine } from "./actionPlanningSearchEngine";
 import { tradeInvariantValidator } from "./tradeInvariantValidator";
+import { marketDynamicsService } from "./marketDynamicsService";
+import { portfolioOptimizerService } from "./portfolioOptimizerService";
+import { prudexCompassService } from "./prudexCompassService";
+import { memoryConsolidationService } from "./memoryConsolidationService";
 import {
   DailyAllocationOutput,
   StockPositionItem,
@@ -408,8 +412,10 @@ export class DailyStrategyDirector {
     notifyStage(2, "MACRO_SEARCH", "SearXNG 权威财经通讯社分级搜刮", `[${marketSession.phaseLabel}] 正在依据时态从 Bloomberg/Reuters/WSJ 检索最新资讯...`, 40);
     const macroRes = await searxngSearchService.searchMacroAndSectorNews(openDSectorsData, marketSession.marketPhase);
 
-    // 异步高密度落库快照 (L2 存储)
+    // 🌟 TradeMaster MDM: 动态计算市场动力学状态机报告 (TSI / VCI / 市场广度)
+    const marketDynamics = await marketDynamicsService.getLiveMarketDynamics(macroRes?.macroIntel?.sentimentMood);
     if (macroRes.macroIntel.macroSnapshot) {
+      macroRes.macroIntel.macroSnapshot.marketDynamics = marketDynamics;
       try {
         await macroSnapshotStoreService.saveDailySnapshot(macroRes.macroIntel.macroSnapshot);
       } catch (e) {}
@@ -420,6 +426,7 @@ export class DailyStrategyDirector {
       step2Done: true,
       macroOverview: macroRes.macroOverview,
       macroSnapshot: macroRes.macroIntel.macroSnapshot,
+      marketDynamics,
     };
 
     // STEP 3: 候选池构建与标的多维消歧深度挖掘 (CANDIDATE_AND_SEARCH)
@@ -945,6 +952,30 @@ export class DailyStrategyDirector {
 
     screenerRes.actions = optimizedActions;
 
+    // 🌟 TradeMaster EIIE 现代组合理论权重凸优化求解
+    const buyCandidates = screenerRes.actions
+      .filter((a) => a.action === "BUY" || a.actionType === "OPEN_POSITION" || a.actionType === "ADD_POSITION")
+      .map((a) => {
+        const snap = snapshotsMap.get(a.symbol.toUpperCase());
+        const turnover = snap?.turnoverRate || 1.5;
+        return {
+          symbol: a.symbol,
+          companyName: a.companyName,
+          expectedReturnPct: a.targetProfitGoalPct || targetProfitGoalPct,
+          volatilityPct: turnover * 12.0,
+          sector: a.strategyCategoryLabel || "GENERAL",
+          confidenceScore: a.goalDrivenProbability || 70,
+          currentPrice: a.estimatedPrice || quotesMap.get(a.symbol.toUpperCase()) || 100,
+        };
+      });
+
+    const portfolioAllocationResult = portfolioOptimizerService.optimizeAllocation({
+      candidates: buyCandidates,
+      totalDeployableCapital: updatedCapitalSpace.totalDeployableCapacity,
+      maxRegimeCapPct: marketDynamics.adaptedRiskParams.maxPortfolioCapPct,
+      singleStockCapPct: marketDynamics.adaptedRiskParams.singleStockCapPct,
+    });
+
     // 将推演建议动作绑回列表并附上 5 大事实证据与 3 大客观事实锚点
     screenerRes.actions.forEach((act, idx) => {
       const target = perStockDeductionRetroList.find((item) => item.symbol.toUpperCase() === act.symbol.toUpperCase());
@@ -1139,6 +1170,7 @@ export class DailyStrategyDirector {
     });
 
     const searxngCheck = await searxngSearchService.getStatus();
+    const isLiveOpenDAlive = await openDaemonManager.checkOpenDAlive();
 
     const goalConstraints: GoalDrivenConstraint = {
       targetTimeHorizonDays,
@@ -1147,10 +1179,14 @@ export class DailyStrategyDirector {
       userDeployableBudget: budgetToUse,
     };
 
+    // 🌟 TradeMaster PRUDEX-Compass 6 维综合评估与 FinAgent 双层反思原则库
+    const prudexCompass = await prudexCompassService.getLatestPortfolioScore(portfolioId);
+    const dualLevelMemory = await memoryConsolidationService.getDualLevelMemoryReport(portfolioId);
+
     return {
       strategyId: strategyRecord.id,
       strategyDate: todayStr,
-      openDStatus: { connected: openDCheck.success, message: openDCheck.message },
+      openDStatus: { connected: !!isLiveOpenDAlive, message: isLiveOpenDAlive ? "🟢 OpenD 端口 11111 连通正常" : "🔴 OpenD 离线" },
       searxngStatus: { connected: searxngCheck.connected, message: searxngCheck.message },
       ollamaStatus: { connected: ollamaCheck.connected, message: ollamaCheck.message },
       deductionPipeline,
@@ -1158,6 +1194,10 @@ export class DailyStrategyDirector {
         marketOverview: screenerRes.marketOverview,
         macroIntel: macroRes.macroIntel,
         macroSnapshot: macroRes.macroIntel.macroSnapshot,
+        marketDynamics,
+        prudexCompass,
+        dualLevelMemory,
+        portfolioAllocation: portfolioAllocationResult,
         marketSession,
         capitalSpace: updatedCapitalSpace,
         goalConstraints,
@@ -1169,7 +1209,7 @@ export class DailyStrategyDirector {
         riskAlerts: screenerRes.riskAlerts,
         knowledgeGraph: knowledgeGraphList,
         perStockDeductionRetro: perStockDeductionRetroList,
-        narrativeReport: `### 操盘分析报告 (${todayStr} | ${marketSession.phaseLabel})\n\n${macroRes.macroIntel.summaryHeadline}\n\n**美东时态定位**: ${marketSession.easternTimeStr} (${marketSession.countdownLabel})\n**大模型担当角色**: ${marketSession.activeRoleName}\n**宏观策略基调**: ${macroRes.macroIntel.macroTradingStance.bias}\n**仓位调控建议**: ${macroRes.macroIntel.macroTradingStance.positionStrategy}\n**风控预警防线**: ${macroRes.macroIntel.macroTradingStance.riskWarning}\n**资金空间与确定性**: 可用操盘空间 $${updatedCapitalSpace.totalDeployableCapacity}，组合目标达成期望概率 ${overallGoalProbability}% (确定性得分 ${overallCertaintyScore}/100)`,
+        narrativeReport: `### 操盘分析报告 (${todayStr} | ${marketSession.phaseLabel})\n\n${macroRes.macroIntel.summaryHeadline}\n\n**美东时态定位**: ${marketSession.easternTimeStr} (${marketSession.countdownLabel})\n**大模型担当角色**: ${marketSession.activeRoleName}\n**宏观动力学 (MDM)**: ${marketDynamics.regimeLabel} (TSI: ${marketDynamics.trendStrengthIndex}, VCI: ${marketDynamics.volatilityClusteringIndex})\n**宏观策略基调**: ${macroRes.macroIntel.macroTradingStance.bias}\n**仓位调控建议**: ${macroRes.macroIntel.macroTradingStance.positionStrategy}\n**风控预警防线**: ${macroRes.macroIntel.macroTradingStance.riskWarning}\n**资金空间与确定性**: 可用操盘空间 $${updatedCapitalSpace.totalDeployableCapacity}，组合目标达成期望概率 ${overallGoalProbability}% (确定性得分 ${overallCertaintyScore}/100)`,
       },
       retroPnL,
     };

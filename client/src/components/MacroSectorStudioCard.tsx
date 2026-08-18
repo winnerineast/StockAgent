@@ -68,6 +68,19 @@ export interface DailyMacroSnapshotDTO {
   topNews: CredibleNewsItem[];
   promptContext: string;
   isLiveRealtime?: boolean;
+  marketDynamics?: {
+    regime: string;
+    regimeLabel: string;
+    trendStrengthIndex: number;
+    volatilityClusteringIndex: number;
+    marketBreadthPct: number;
+    adaptedRiskParams: {
+      maxPortfolioCapPct: number;
+      singleStockCapPct: number;
+      atrStopMultiplier: number;
+    };
+    rationale: string;
+  };
 }
 
 export interface MacroSectorStudioCardProps {
@@ -348,6 +361,39 @@ export const MacroSectorStudioCard: React.FC<MacroSectorStudioCardProps> = ({
                   <span className={displayedSnapshot.crossAsset.qqqChange >= 0 ? "text-emerald-400" : "text-rose-400"}>
                     QQQ {displayedSnapshot.crossAsset.qqqChange > 0 ? "+" : ""}{displayedSnapshot.crossAsset.qqqChange}%
                   </span>
+                </span>
+              </div>
+            </div>
+
+            {/* 🌟 TradeMaster MDM 市场动力学状态机卡片 */}
+            <div className="p-2 rounded-lg bg-indigo-950/40 border border-indigo-500/30 text-xs space-y-1.5">
+              <div className="flex items-center justify-between text-[11px] font-bold text-indigo-300">
+                <span className="flex items-center gap-1">
+                  <Compass className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>TradeMaster MDM 动力学</span>
+                </span>
+                <span className="px-1.5 py-0.2 rounded text-[10px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 font-mono">
+                  {displayedSnapshot.marketDynamics?.regimeLabel || "📦 低波窄幅蓄势"}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-1 text-[10px] font-mono">
+                <div className="bg-slate-900/80 p-1 rounded border border-slate-800 flex justify-between">
+                  <span className="text-slate-400">TSI 趋势强度:</span>
+                  <span className={displayedSnapshot.marketDynamics?.trendStrengthIndex && displayedSnapshot.marketDynamics.trendStrengthIndex > 0 ? "text-emerald-400 font-bold" : "text-amber-400 font-bold"}>
+                    {displayedSnapshot.marketDynamics?.trendStrengthIndex !== undefined ? (displayedSnapshot.marketDynamics.trendStrengthIndex > 0 ? `+${displayedSnapshot.marketDynamics.trendStrengthIndex}` : displayedSnapshot.marketDynamics.trendStrengthIndex) : "+0.15"}
+                  </span>
+                </div>
+                <div className="bg-slate-900/80 p-1 rounded border border-slate-800 flex justify-between">
+                  <span className="text-slate-400">VCI 波动聚集:</span>
+                  <span className="text-cyan-300 font-bold">
+                    {displayedSnapshot.marketDynamics?.volatilityClusteringIndex !== undefined ? displayedSnapshot.marketDynamics.volatilityClusteringIndex : "0.00"}
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono border-t border-indigo-900/40 pt-1">
+                <span>自适应仓位上限:</span>
+                <span className="text-emerald-400 font-bold">
+                  {displayedSnapshot.marketDynamics?.adaptedRiskParams?.maxPortfolioCapPct || displayedSnapshot.positionCapPct || 75}% (单票≤{displayedSnapshot.marketDynamics?.adaptedRiskParams?.singleStockCapPct || 35}%)
                 </span>
               </div>
             </div>
