@@ -24,7 +24,13 @@ import {
   SlidersHorizontal,
   Target,
   Lock,
+  Copy,
+  Check,
+  Moon,
+  ClipboardList,
+  CheckCircle2,
 } from "lucide-react";
+import { formatOrderSlipText } from "../utils/orderSlipFormatter";
 import { DeductionProgressStepper, StageStep } from "./DeductionProgressStepper";
 import { PerStockDeductionRetroCard } from "./PerStockDeductionRetroCard";
 import { MacroSectorStudioCard } from "./MacroSectorStudioCard";
@@ -412,6 +418,51 @@ export const DeductionRetroStudioTab: React.FC<DeductionRetroStudioTabProps> = (
 
   const parsedMacroIntel = useMemo(() => parseMacroIntel(marketOverview), [marketOverview]);
 
+  // 🌟 上班族 30 秒操盘：过滤出今晚真正需要挂单执行的标的 (BUY / TRIM / SELL)
+  const [copiedSlipSymbol, setCopiedSlipSymbol] = useState<string | null>(null);
+  const tonightActionableList = useMemo(() => {
+    return perStockItems
+      .filter((item) => {
+        const rec = item.currentRecommendation;
+        if (!rec) return false;
+        const act = rec.action;
+        return (act === "BUY" && (rec.suggestedShares || 0) > 0) || act === "TRIM" || act === "SELL";
+      })
+      .map((item) => {
+        const rec = item.currentRecommendation;
+        return {
+          symbol: item.symbol,
+          companyName: item.companyName,
+          action: rec.action,
+          actionType: (rec as any).actionType,
+          suggestedShares: rec.suggestedShares,
+          estimatedPrice: rec.estimatedPrice || item.position?.marketPrice || 0,
+          estimatedAmount: rec.estimatedAmount,
+          entryZone: rec.entryZone,
+          stopLossPrice: rec.stopLossPrice,
+          targetPrice: rec.targetPrice,
+          whySummary: rec.whySummary || rec.rationale || item.strategyCategoryReason,
+        };
+      });
+  }, [perStockItems]);
+
+  const handleCopySingleSlip = (item: any) => {
+    const slip = formatOrderSlipText(item);
+    navigator.clipboard.writeText(slip);
+    setCopiedSlipSymbol(item.symbol);
+    setTimeout(() => setCopiedSlipSymbol(null), 2000);
+  };
+
+  const handleCopyAllSlips = () => {
+    if (tonightActionableList.length === 0) return;
+    const allText = tonightActionableList
+      .map((item) => formatOrderSlipText(item))
+      .join("\n\n------------------------\n\n");
+    navigator.clipboard.writeText(allText);
+    setCopiedSlipSymbol("ALL");
+    setTimeout(() => setCopiedSlipSymbol(null), 2500);
+  };
+
   const step1Status = getStepStatus(1);
   const step2Status = getStepStatus(2);
   const step3Status = getStepStatus(3);
@@ -574,6 +625,127 @@ export const DeductionRetroStudioTab: React.FC<DeductionRetroStudioTabProps> = (
             </div>
           </div>
         </div>
+      </div>
+
+      {/* 🌟 上班族极简 30 秒操盘看板 (Tonight's Action Checklist) */}
+      <div className="p-4 md:p-5 rounded-2xl bg-gradient-to-r from-slate-950 via-slate-900 to-cyan-950/20 border border-cyan-500/30 shadow-xl shadow-cyan-950/20 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 shadow-inner">
+              <ClipboardList className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="font-bold text-white text-sm">🌙 今晚操盘小抄 (Tonight's Action Checklist)</h3>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/10 text-cyan-300 border border-cyan-500/30">
+                  {tonightActionableList.length > 0 ? `需执行 ${tonightActionableList.length} 笔挂单` : "无需挂单 · 安稳持仓"}
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                面向下班看盘的上班族，抹平认知负荷，直接输出可对着券商 App 复制的限价指令
+              </p>
+            </div>
+          </div>
+
+          {tonightActionableList.length > 0 && (
+            <button
+              onClick={handleCopyAllSlips}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all border shadow-md cursor-pointer ${
+                copiedSlipSymbol === "ALL"
+                  ? "bg-emerald-500 text-slate-950 border-emerald-400"
+                  : "bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white border-cyan-400/40 hover:scale-105"
+              }`}
+            >
+              {copiedSlipSymbol === "ALL" ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+              <span>{copiedSlipSymbol === "ALL" ? "✓ 全部挂单小抄已复制" : "📋 复制今晚全部挂单小抄"}</span>
+            </button>
+          )}
+        </div>
+
+        {tonightActionableList.length === 0 ? (
+          <div className="flex items-center gap-3 py-2 text-xs text-slate-300">
+            <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <CheckCircle2 className="w-4 h-4" />
+            </div>
+            <div>
+              <span className="font-semibold text-emerald-300">持仓均处于健康观察区间，今晚无高胜率建仓/减仓信号。</span>
+              <span className="text-slate-400 ml-1.5">无需在券商进行任何操作，安稳睡觉。</span>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
+            {tonightActionableList.map((act) => {
+              const isBuy = act.action === "BUY";
+              const isTrim = act.action === "TRIM" || act.action === "SELL";
+              const isCopied = copiedSlipSymbol === act.symbol;
+
+              return (
+                <div
+                  key={act.symbol}
+                  className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 hover:border-cyan-500/40 transition-all flex flex-col justify-between gap-2.5 shadow-md"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-white text-sm">{act.symbol}</span>
+                        <span
+                          className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${
+                            isBuy
+                              ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                              : isTrim
+                              ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                              : "bg-slate-800 text-slate-300 border-slate-700"
+                          }`}
+                        >
+                          {isBuy ? `🟢 建仓 ${act.suggestedShares}股` : `🟡 减仓 ${act.suggestedShares}股`}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 truncate max-w-[180px] mt-0.5">
+                        {act.companyName || act.symbol}
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={() => handleCopySingleSlip(act)}
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all border cursor-pointer ${
+                        isCopied
+                          ? "bg-emerald-500 text-slate-950 border-emerald-400"
+                          : "bg-slate-900 hover:bg-slate-800 text-cyan-300 border-cyan-500/30"
+                      }`}
+                      title="复制单票挂单小抄"
+                    >
+                      {isCopied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                      <span>{isCopied ? "已复制" : "复制"}</span>
+                    </button>
+                  </div>
+
+                  <div className="space-y-1 text-xs font-mono bg-slate-900/90 p-2 rounded-lg border border-slate-800/80">
+                    <div className="flex items-center justify-between text-slate-300">
+                      <span className="text-slate-400 font-sans">挂单限价:</span>
+                      <strong className="text-cyan-300">
+                        {act.entryZone ? `$${act.entryZone.min.toFixed(2)} ~ $${act.entryZone.max.toFixed(2)}` : `$${act.estimatedPrice.toFixed(2)}`}
+                      </strong>
+                    </div>
+                    <div className="flex items-center justify-between text-slate-300">
+                      <span className="text-slate-400 font-sans">止损/止盈:</span>
+                      <span>
+                        <strong className="text-rose-400">${act.stopLossPrice?.toFixed(2) || "--"}</strong>
+                        <span className="text-slate-500 mx-1">/</span>
+                        <strong className="text-emerald-400">${act.targetPrice?.toFixed(2) || "--"}</strong>
+                      </span>
+                    </div>
+                  </div>
+
+                  {act.whySummary && (
+                    <p className="text-[11px] text-slate-400 line-clamp-1 italic">
+                      💡 {act.whySummary}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* ========================================================================= */}

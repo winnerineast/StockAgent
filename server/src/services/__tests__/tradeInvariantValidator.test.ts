@@ -330,4 +330,32 @@ describe("TradeInvariantValidator Unit Tests (FINOS Legend Invariant Guardrails)
     expect(result.status.diagnosticNotes?.join(" ")).toContain("单票持仓上限已自动收缩 50% 至 17.5%");
     expect(result.action.orderStatus).toBe("PENDING_SUBMIT");
   });
+
+  it("should format standardized one-click copyable order slip text for retail brokers", () => {
+    const action: ActionItem = {
+      action: "BUY",
+      actionType: "OPEN_POSITION",
+      symbol: "NVDA",
+      companyName: "NVIDIA Corp",
+      suggestedShares: 15,
+      estimatedPrice: 103.50,
+      estimatedAmount: 1552.50,
+      entryZone: { min: 102.50, max: 104.20 },
+      stopLossPrice: 97.00,
+      targetPrice: 115.00,
+      whySummary: "突破 14 日 ATR 波动下沿，主力资金流入 +$1.2B",
+      rationale: "突破 14 日 ATR 波动下沿，主力资金流入 +$1.2B",
+      urgency: "HIGH",
+    };
+
+    const slip = tradeInvariantValidator.formatOrderSlipText(action);
+    expect(slip).toContain("【券商挂单小抄 · NVDA】");
+    expect(slip).toContain("标的: NVDA (NVIDIA Corp)");
+    expect(slip).toContain("动作: 限价建仓 (BUY LIMIT)");
+    expect(slip).toContain("建议股数: 15 股");
+    expect(slip).toContain("挂单限价: $102.50 ~ $104.20");
+    expect(slip).toContain("止损点位: $97.00");
+    expect(slip).toContain("止盈目标: $115.00");
+    expect(slip).toContain("核心理由: 突破 14 日 ATR 波动下沿，主力资金流入 +$1.2B");
+  });
 });

@@ -246,6 +246,50 @@ export class TradeInvariantValidator {
       status,
     };
   }
+
+  /**
+   * 格式化券商一键挂单小抄指令文本 (One-Click Copyable Order Slip)
+   * 专门面向下班看盘的上班族，抹平认知负荷与计算成本
+   */
+  public static formatOrderSlipText(action: ActionItem): string {
+    const sym = action.symbol;
+    const name = action.companyName || sym;
+    const act = action.action;
+    const actType = action.actionType;
+    const shares = action.suggestedShares || 0;
+    const price = action.estimatedPrice || 0;
+    const estVal = action.estimatedAmount || Number((shares * price).toFixed(2));
+
+    const actionLabel =
+      act === "BUY"
+        ? actType === "ADD_POSITION"
+          ? "限价加仓 (BUY LIMIT)"
+          : "限价建仓 (BUY LIMIT)"
+        : act === "TRIM" || act === "SELL"
+        ? actType === "CLOSE_POSITION"
+          ? "限价清仓 (SELL LIMIT)"
+          : "限价减仓 (SELL LIMIT)"
+        : "保持观望 (HOLD)";
+
+    const zoneText = action.entryZone
+      ? `$${action.entryZone.min.toFixed(2)} ~ $${action.entryZone.max.toFixed(2)}`
+      : `$${price.toFixed(2)}`;
+
+    const slText = action.stopLossPrice ? `$${action.stopLossPrice.toFixed(2)}` : "未设";
+    const tpText = action.targetPrice ? `$${action.targetPrice.toFixed(2)}` : "未设";
+    const why = action.whySummary || action.rationale || "遵循量化风控纪律";
+
+    return [
+      `【券商挂单小抄 · ${sym}】`,
+      `标的: ${sym} (${name})`,
+      `动作: ${actionLabel}`,
+      `建议股数: ${shares} 股 (预估资金约 $${estVal})`,
+      `挂单限价: ${zoneText}`,
+      `止损点位: ${slText}`,
+      `止盈目标: ${tpText}`,
+      `核心理由: ${why}`,
+    ].join("\n");
+  }
 }
 
 export const tradeInvariantValidator = TradeInvariantValidator;

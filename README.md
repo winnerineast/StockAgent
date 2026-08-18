@@ -53,13 +53,17 @@ Designed specifically for working professionals to spend **5 minutes after marke
 
 ---
 
-### 1. 🎛️ Studio Cover & Live Dashboard (Cover & Studio Dashboard)
+### 1. 🎛️ Studio Cover, Session Clock & Tonight's Action Checklist (Cover & Studio Dashboard)
 
-The top section unifies system hardware health, trading market sessions, core account KPI cards, and an end-to-end deduction pipeline progress stepper.
+The top section unifies system hardware health, trading market sessions, core account KPI cards, end-to-end deduction progress stepper, and the **Tonight's Action Checklist Banner** tailored specifically for busy professionals.
 
 ![StockAgent Studio Main Dashboard](./docs/images/01_studio_dashboard_cover.png)
 
 #### 🌟 Key Capabilities & Interaction Highlights:
+* **🌙 Tonight's Action Checklist (今晚操盘小抄)**:
+  - **Designed specifically for working traders & small capital (<$5,000)**, completely eliminating data noise and analysis paralysis;
+  - **Safe Hold Status (Zero Action Needed)**: Displays calm green advice: `🌙 All holdings within safe dynamic stop bands. No high-conviction buy/trim signals tonight. No broker action needed—sleep well.`;
+  - **Action Directives (Triggered Signals)**: Automatically aggregates all `BUY / TRIM / SELL` directives with exact `Limit Order Zone`, `Suggested Shares`, and `Stop Loss / Target Price`, featuring a **「📋 Copy All Tonight's Order Slips」** button for one-click multi-stock broker execution.
 * **Hardware & Service Readiness HeaderBar**:
   - Live GPU VRAM and system memory utilization monitor (e.g., RTX 4090 24GB / 64GB host memory);
   - 4 Core Service Readiness Badges: `🟢 OpenD Connected` (11111), `🟢 SearXNG Ready` (8088), `🟢 Local LLM Ready` (11434 with hardware-aware model recommendations such as Qwen 3.8B/7B/14B), and `🟢 Trade Password Unlocked`;
@@ -96,30 +100,26 @@ Integrates authoritative financial news retrieval via SearXNG with NTU's **Trade
 
 ---
 
-### 3. ⚡ 30-Second Quick Decision & Single-Stock Deduction Cards (Stock Deduction & Sizer)
+### 3. ⚡ Compact Deduction Cards, One-Click Order Slips & Quant Risk Guardrails (Stock Deduction & Sizer)
 
-Provides unified quantitative deduction cards for existing holdings, 24h cleared positions, watchlists, and macro candidates, replacing fluff with 30-second decisive hard facts.
+Provides unified quantitative deduction cards with **Progressive Disclosure (按需展开)**, hiding heavy data chains by default to prioritize 3-second rapid decision-making.
 
 ![Stock Deduction & 30s Decision Facts](./docs/images/03_stock_deduction_and_sizer.png)
 
 #### 🌟 Feature Breakdown & Card Architecture:
-* **Position Sizing Controller (Sizer) & Multi-Factor Filters**:
-  - **Deployable Budget Slider**: Flexible adjustment from \$500 to \$50,000;
-  - **Risk Preference Modes**: `Conservative` (demands higher margin of safety), `Balanced` (standard swing-trading), `Aggressive` (breakout momentum);
-  - **2-Tier Classification & Filter Console**:
-    - Decision Filters: `All`, `🏆 High-Conviction Core`, `⚡ Rebalance Actions`, `🛡️ Existing Holdings`, `⏳ Watchlist`, `🟢 Experience Feedbacks`, `🔴 Lesson Warnings`;
-    - 5-Strategy Factor Buckets: `Capital Inflow Buy`, `Oversold Buy`, `Fundamental Buy`, `News Catalyst Buy`, `Watch & Wait`.
-* **⚡ 30-Second Quick Decision "3-Pillar Hard Facts"**:
-  - **1. Fundamentals & Valuation Anchor**: OpenD dynamic PE/PS, revenue growth, and fair valuation bounds;
-  - **2. Authoritative News & Catalysts**: Disambiguated catalyst facts from SearXNG;
-  - **3. Capital Flow & ATR Soft Risk Line**: Institutional super-large order net flow and ATR dynamic trailing stop line.
-* **🛡️ Trade Invariant Guardrails**:
-  - Inspired by FINOS Legend class invariants, every recommendation strictly enforces cash limits, max 35% single-stock caps, and monotonic stops ($SL < P < TP$), displaying verified safety badges with clamp-on-overflow self-healing.
+* **📋 One-Click Copyable Order Slips (券商一键挂单小抄)**:
+  - Clicking **「📋 复制挂单指令」** instantly copies standardized limit-order directives (symbol, suggested shares, EntryZone price range, hard stop loss, target profit, and one-sentence core rationale) formatted for direct entry into MooMoo, Futu, Interactive Brokers (IBKR), or Charles Schwab.
+* **🔍 Progressive Disclosure & Compact Mode (渐进式减法呈现)**:
+  - **Default Compact View**: Displays only ticker, market price, action badge, limit-order parameters, and decisive core facts;
+  - **Expand on Demand**: Clicking **「🔍 展开 7 维研报」** smoothly unfolds all 7 sub-tabs (Institutional Flows, Fundamentals, TimeFM, Community Sentiment, Disambiguated News, Knowledge Graph, and MooMoo Live Depth).
+* **🛡️ 5 Industrial-Grade Quant & Invariant Guardrails (5 大量化底层风控升级)**:
+  - **1. Cash & Single-Stock Position Cap Invariants (Issue #1)**: Strictly blocks BUY orders when cash is depleted; deducts existing holding values to ensure incremental buys never breach the 35% concentration ceiling;
+  - **2. Markowitz Quadratic Covariance & Sharpe Optimization (Issue #2)**: Incorporates cross-asset intra-sector correlation penalties ($\rho = 0.65$) to penalize concentrated tech cluster risks, adhering to the standard Sharpe ratio formula $\frac{R_p - R_f}{\sigma_p}$;
+  - **3. ADV 2% Liquidity Participation Cap & Friction Model (Issue #3)**: Restricts order size to $\le 2\% \text{ ADV}$ to protect small caps from market impact, embedding adaptive slippage ($0.15\% \sim 0.25\%$) and commission drag into EntryZone bounds;
+  - **4. Parkinson Extreme Range + ATR Realized Volatility with Fat-Tail Adjustment (Issue #4)**: Replaces rough turnover scaling with Parkinson intraday logarithmic amplitude and 14-day ATR, injecting Student's-t fat-tail multipliers to capture tail risk;
+  - **5. Earnings Date Overnight Gap Risk Shield (Issue #5)**: Automatically contracts single-stock position caps by 50% within 3 days of earnings releases to eliminate catastrophic overnight gap-downs, with full order lifecycle state machine tracking (`PENDING_SUBMIT` $\to$ `ACKNOWLEDGED` $\to$ `FILLED` / `REJECTED`).
 * **⚔️ Multi-Agent Bull vs Bear Debate (TradingAgents Alignment)**:
   - Forces the LLM to simultaneously debate a Bull Thesis against a strict **Devil's Advocate Downside Risk (`bearishRiskPoint`)** and **Decisive Verdict (`bullBearVerdict`)**.
-* **🛡️ Microstructure Liquidity Fragility & Slippage Protection Buffer**:
-  - Computes Liquidity Fragility Index (LFI) from Bid/Ask spreads and turnover;
-  - Generates **EntryZone limit order slippage buffer bounds** (e.g., limit order placement between \$97.46 and \$98.50 to prevent opening bell gap-and-trap losses).
 * **Google TimeFM Foundation Model Next-Day Predictions**:
   - Evaluates 120-day K-line time series to output high-confidence directional labels, expected changes, and 10%~90% confidence bands.
 * **🚨 Data Sufficiency Gatekeeper Circuit Breakers**:

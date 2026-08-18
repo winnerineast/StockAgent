@@ -21,7 +21,10 @@ import {
   AlertTriangle,
   Scale,
   Flame,
+  Copy,
+  Check,
 } from "lucide-react";
+import { formatOrderSlipText } from "../utils/orderSlipFormatter";
 
 export interface TimeFmForecastItem {
   direction: "UP" | "DOWN" | "SIDEWAYS";
@@ -142,6 +145,7 @@ interface PerStockDeductionRetroCardProps {
       estimatedPrice: number;
       estimatedAmount: number;
       rationale: string;
+      whySummary?: string;
       targetPrice?: number;
       stopLossPrice?: number;
       riskRewardRatio?: number;
@@ -202,7 +206,8 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
   onOpenKnowledgeGraph,
   onOpenDeductionModal,
 }) => {
-  const [expanded, setExpanded] = useState<boolean>(true);
+  const [expanded, setExpanded] = useState<boolean>(false);
+  const [copied, setCopied] = useState<boolean>(false);
   const [subTab, setSubTab] = useState<"retro" | "capitalFlow" | "community" | "fundamentals" | "kg" | "news" | "position">("retro");
 
   const rec = item.currentRecommendation;
@@ -213,6 +218,27 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
   const fund = item.fundamentals;
   const isBuy = rec?.action === "BUY";
   const isTrim = rec?.action === "TRIM" || rec?.action === "SELL";
+
+  const handleCopyOrderSlip = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!rec) return;
+    const slip = formatOrderSlipText({
+      symbol: item.symbol,
+      companyName: item.companyName,
+      action: rec.action,
+      actionType: (rec as any).actionType,
+      suggestedShares: rec.suggestedShares,
+      estimatedPrice: rec.estimatedPrice || pos?.marketPrice,
+      estimatedAmount: rec.estimatedAmount,
+      entryZone: rec.entryZone,
+      stopLossPrice: rec.stopLossPrice,
+      targetPrice: rec.targetPrice,
+      whySummary: rec.whySummary || rec.rationale || item.strategyCategoryReason,
+    });
+    navigator.clipboard.writeText(slip);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   const pnl = pos ? (pos.marketPrice - pos.costBasis) * pos.shares : 0;
   const pnlPct = pos && pos.costBasis > 0 ? (((pos.marketPrice - pos.costBasis) / pos.costBasis) * 100).toFixed(1) : "0";
@@ -309,6 +335,34 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
                 <span className="text-slate-500 italic">(暂未建立实盘持仓)</span>
               </div>
             )}
+
+            {/* 🌟 极简上班族挂单参数胶囊 */}
+            {rec && (rec.action === "BUY" || rec.action === "TRIM" || rec.action === "SELL") && (
+              <div className="flex flex-wrap items-center gap-2 text-xs mt-2 pt-2 border-t border-slate-800/80">
+                <div className="flex items-center gap-1 bg-slate-950 px-2.5 py-1 rounded-lg border border-slate-800 text-cyan-300 font-mono">
+                  <span className="text-slate-400 font-sans">建议挂单:</span>
+                  <strong>{rec.entryZone ? `$${rec.entryZone.min.toFixed(2)} ~ $${rec.entryZone.max.toFixed(2)}` : `$${(rec.estimatedPrice || pos?.marketPrice || 0).toFixed(2)}`}</strong>
+                  <span className="text-slate-400">({rec.suggestedShares}股)</span>
+                </div>
+                {rec.stopLossPrice && (
+                  <div className="flex items-center gap-1 bg-slate-950 px-2.5 py-1 rounded-lg border border-slate-800 text-rose-400 font-mono">
+                    <span className="text-slate-400 font-sans">止损位:</span>
+                    <strong>${rec.stopLossPrice.toFixed(2)}</strong>
+                  </div>
+                )}
+                {rec.targetPrice && (
+                  <div className="flex items-center gap-1 bg-slate-950 px-2.5 py-1 rounded-lg border border-slate-800 text-emerald-400 font-mono">
+                    <span className="text-slate-400 font-sans">目标位:</span>
+                    <strong>${rec.targetPrice.toFixed(2)}</strong>
+                  </div>
+                )}
+                {rec.whySummary && (
+                  <span className="text-slate-300 text-xs truncate max-w-md hidden xl:inline">
+                    • {rec.whySummary}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -332,54 +386,45 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
             );
           })()}
 
-          {item.timefmForecast && (
-            <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 flex items-center gap-1">
-              <Zap className="w-3.5 h-3.5 text-indigo-400" />
-              <span>TimeFM: {item.timefmForecast.directionLabel}</span>
-            </span>
+          {/* 📋 一键复制券商挂单指令按钮 */}
+          {rec && (rec.action === "BUY" || rec.action === "TRIM" || rec.action === "SELL") && (
+            <button
+              onClick={handleCopyOrderSlip}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border shadow-sm cursor-pointer ${
+                copied
+                  ? "bg-emerald-500 text-slate-950 border-emerald-400 shadow-emerald-500/20"
+                  : "bg-slate-950 hover:bg-slate-850 text-cyan-300 border-cyan-500/40 hover:border-cyan-400"
+              }`}
+              title="点击一键复制标准限价单挂单指令至剪贴板，可直接在 Moomoo/富途/IBKR 挂单"
+            >
+              {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+              <span>{copied ? "✓ 挂单指令已复制" : "📋 复制挂单指令"}</span>
+            </button>
           )}
 
-          {past.verificationOutcome && (
-            <span
-              className={`px-2.5 py-1 rounded-lg text-xs font-bold border flex items-center gap-1 ${
-                past.verificationOutcome === "EXPERIENCE"
-                  ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
-                  : past.verificationOutcome === "LESSON"
-                  ? "bg-rose-500/15 text-rose-300 border-rose-500/30"
-                  : "bg-slate-800 text-slate-400 border-slate-700"
-              }`}
-            >
-              <span>{past.verificationOutcomeLabel || (past.verificationOutcome === "EXPERIENCE" ? "🟢 经验" : "🔴 教训")}</span>
-            </span>
-          )}
+          {/* 展开/收起 7 维推演研报按钮 */}
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-xs font-semibold transition-all cursor-pointer"
+            title="按需展开或折叠 7 维全要素推演研报与客观证据链"
+          >
+            <span>{expanded ? "收起研报" : "🔍 展开 7 维研报"}</span>
+            {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </button>
 
-          {item.knowledgeGraph?.spilloverAlphaScore !== undefined && (
-            <span
-              className={`px-2.5 py-1 rounded-lg text-xs font-bold border flex items-center gap-1 ${
-                item.knowledgeGraph.spilloverAlphaScore > 10
-                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
-                  : item.knowledgeGraph.spilloverAlphaScore < -10
-                  ? "bg-rose-500/10 text-rose-400 border-rose-500/30"
-                  : "bg-slate-900 text-cyan-300 border-slate-700"
-              }`}
-            >
-              <span>图谱动量:</span>
-              <span>{item.knowledgeGraph.spilloverAlphaScore >= 0 ? `+${item.knowledgeGraph.spilloverAlphaScore}` : item.knowledgeGraph.spilloverAlphaScore}</span>
-            </span>
-          )}
           <button
             onClick={() => onOpenDeductionModal && onOpenDeductionModal(item)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white text-xs font-bold shadow-md shadow-cyan-500/20 transition-all hover:scale-105 active:scale-95"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white text-xs font-bold shadow-md shadow-cyan-500/20 transition-all hover:scale-105 active:scale-95 cursor-pointer"
             title="点击打开单股目标驱动推演独立全景舱"
           >
             <Sparkles className="w-3.5 h-3.5" />
-            <span>目标驱动推演全景舱 ↗</span>
+            <span>全景舱 ↗</span>
           </button>
           <button
             onClick={() => onOpenKnowledgeGraph(item.symbol)}
-            className="px-2.5 py-1.5 rounded-xl bg-slate-950 border border-slate-700 text-cyan-400 hover:bg-cyan-500/10 text-xs transition-all font-semibold"
+            className="px-2.5 py-1.5 rounded-xl bg-slate-950 border border-slate-700 text-cyan-400 hover:bg-cyan-500/10 text-xs transition-all font-semibold cursor-pointer"
           >
-            产业链图谱 ↗
+            图谱 ↗
           </button>
         </div>
       </div>
