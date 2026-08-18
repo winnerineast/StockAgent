@@ -964,7 +964,7 @@ export class DailyStrategyDirector {
           expectedReturnPct: a.targetProfitGoalPct || targetProfitGoalPct,
           volatilityPct: turnover * 12.0,
           sector: a.strategyCategoryLabel || "GENERAL",
-          confidenceScore: a.goalDrivenProbability || 70,
+          confidenceScore: a.goalAttainmentProbability || 70,
           currentPrice: a.estimatedPrice || quotesMap.get(a.symbol.toUpperCase()) || 100,
         };
       });

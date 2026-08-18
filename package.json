@@ -9,6 +9,9 @@
     "build:server": "cd server && npm run build",
     "build:client": "cd client && npm run build",
     "build": "npm run build:server && npm run build:client",
+    "test": "cd server && npm test",
+    "test:all": "cd server && npm test",
+    "check": "cd server && npx tsc --noEmit && cd ../client && npx tsc --noEmit",
     "db:push": "cd server && npx prisma db push"
   },
   "devDependencies": {
