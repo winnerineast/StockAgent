@@ -33,6 +33,8 @@ export interface OpenDSnapshotItem {
   earningPerShare?: number;
   totalMarketVal?: number;
   turnoverRate?: number;
+  volume?: number;
+  averageDailyVolume?: number;
   prePrice?: number;
   preChangeRate?: number;
   afterPrice?: number;
@@ -340,6 +342,40 @@ export interface ActionItem {
   simulationResult?: MarketSimulationResult;     // 微观多主体博弈仿真出清结果
   scenarioBranches?: ScenarioBranch[];           // 三态情景演化分支
   adaptivePolicy?: AdaptiveActionPolicy;         // 最终自适应行动策略包
+
+  // 微观市场结构与执行摩擦成本字段 (Issue #3 & #5)
+  slippagePct?: number;                          // 预估滑点率 (%)
+  estimatedSlippageCost?: number;                // 预估滑点冲击成本 ($)
+  estimatedFee?: number;                         // 预估交易佣金与规费 ($)
+  advLimitShares?: number;                       // 基于 ADV 2% 限制的最大建议股数
+  orderStatus?: OrderExecutionStatus;            // 订单生命周期状态
+}
+
+export type OrderExecutionStatus =
+  | "PENDING_SUBMIT"   // 待提交 / 策略已生成待确认
+  | "ACKNOWLEDGED"     // 券商已接单 / 挂单中
+  | "PARTIAL_FILLED"   // 部分成交
+  | "FILLED"           // 全部成交
+  | "REJECTED"         // 废单 / 拒单 (如风控阻断或资金不足)
+  | "CANCELLED"        // 用户或算法撤单
+  | "EXPIRED";         // 挂单过期
+
+export interface OrderExecutionItem {
+  orderId: string;
+  strategyId?: string;
+  symbol: string;
+  action: "BUY" | "SELL" | "TRIM";
+  status: OrderExecutionStatus;
+  submittedShares: number;
+  filledShares: number;
+  submittedPrice: number;
+  averageFillPrice?: number;
+  targetPrice?: number;
+  stopLossPrice?: number;
+  submittedAt: string;
+  updatedAt: string;
+  statusMessage?: string;
+  rejectionReason?: string;
 }
 
 export interface RiskAlert {

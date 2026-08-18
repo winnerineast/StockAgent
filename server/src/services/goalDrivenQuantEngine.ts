@@ -168,6 +168,39 @@ export class GoalDrivenQuantEngine {
   }
 
   /**
+   * 计算标的年化真实波动率 (Annualized Realized Volatility)
+   * 结合经典 Parkinson 极值波动率、52周对数跨度与 ATR 日内扩散:
+   * sigma_ann = sqrt(252) * sigma_daily
+   */
+  public calculateAnnualizedVolatility(params: {
+    currentPrice: number;
+    snapshot?: OpenDSnapshotItem;
+    customAtr?: number;
+  }): number {
+    const { currentPrice, snapshot, customAtr } = params;
+    const curP = currentPrice > 0 ? currentPrice : 100.0;
+
+    // 1. 基于 ATR 的基准日波动率
+    const { atrPct } = this.calculateATR({ currentPrice: curP, snapshot, customAtr });
+    let dailyVol = atrPct / 100.0;
+
+    // 2. 若具备日内最高价与最低价，融合 Parkinson 极值估计量
+    if (snapshot && snapshot.highPrice && snapshot.lowPrice && snapshot.highPrice > snapshot.lowPrice) {
+      const hlRatio = snapshot.highPrice / snapshot.lowPrice;
+      const parkinsonDaily = Math.sqrt((1.0 / (4.0 * Math.LN2)) * Math.pow(Math.log(hlRatio), 2));
+      if (parkinsonDaily > 0) {
+        dailyVol = 0.6 * dailyVol + 0.4 * parkinsonDaily;
+      }
+    }
+
+    // 3. 转化为年化波动率百分比 (按每年 252 个交易日平方根放大)
+    const annualizedVolPct = dailyVol * Math.sqrt(252) * 100;
+
+    // 限制在美股常规统计边界 (12% ~ 85%) 内
+    return Number(Math.max(12.0, Math.min(85.0, annualizedVolPct)).toFixed(1));
+  }
+
+  /**
    * 2. 计算标的 T 日时序波动锥与目标达成概率 P(Hit Goal within T days)
    */
   public calculateGoalAttainment(params: {
@@ -252,15 +285,16 @@ export class GoalDrivenQuantEngine {
     }
 
     // 3. 计算 T 日目标达成概率 P(S_T >= P_target)
-    // S_T 服从对数正态扩散模型: ln(S_T / S_0) ~ N((mu - 0.5 * sigma^2)*T, sigma^2 * T)
+    // S_T 服从对数正态扩散模型并引入尖峰肥尾调节 (Student's-t / Kurtosis Fat-tail Adjustment)
     const targetReturnLog = Math.log(1.0 + Math.max(0.01, targetProfitGoalPct / 100));
     const meanT = (dailyDrift - 0.5 * dailyVol * dailyVol) * T;
-    const stdT = horizonVolatility;
+
+    // 肥尾与跳空扩散修正：波动率越高，厚尾效应越明显，有效扩散带宽扩张 10%~35%
+    const fatTailCorrection = 1.0 + Math.min(0.35, Math.max(0.0, (dailyVol - 0.018) * 8.0));
+    const stdT = horizonVolatility * fatTailCorrection;
 
     const zGoal = (meanT - targetReturnLog) / stdT;
-    // P(Return >= G) = 1 - Phi(-zGoal) = Phi(zGoal)
     const rawGoalProb = this.stdNormalCDF(zGoal);
-    // 映射到合理置信区间 (20% ~ 92%)
     const goalAttainmentProbability = Number(
       Math.min(92.0, Math.max(20.0, rawGoalProb * 100)).toFixed(1)
     );

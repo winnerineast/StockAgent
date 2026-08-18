@@ -53,8 +53,8 @@ export class PortfolioOptimizerService {
     }
 
     const maxInvestedWeight = Math.max(0.1, Math.min(1.0, maxRegimeCapPct / 100.0));
-    const singleStockCap = Math.max(0.05, Math.min(0.35, singleStockCapPct / 100.0));
-    const maxSectorCap = Math.max(0.2, Math.min(0.6, maxSectorExposurePct / 100.0));
+    const singleStockCap = Math.max(0.05, Math.min(1.0, singleStockCapPct / 100.0));
+    const maxSectorCap = Math.max(0.2, Math.min(1.0, maxSectorExposurePct / 100.0));
 
     // 1. 计算各标的的风险调整得分 (Risk-Adjusted Alpha Score)
     // 综合大模型置信度、预期收益与波动率惩罚
@@ -122,24 +122,51 @@ export class PortfolioOptimizerService {
     const cashAllocated = Math.max(0, totalDeployableCapital - totalInvestedCapital);
     const cashWeight = Number((cashAllocated / totalDeployableCapital).toFixed(4));
 
-    // 5. 测算组合预期夏普比率 (Portfolio Expected Sharpe)
+    // 5. 测算组合预期收益率与真实协方差组合波动率 (Portfolio Expected Return & Markowitz Covariance Volatility)
     const portExpectedRet = rawScores.reduce((sum, item) => {
       const w = weights[item.symbol] || 0;
       return sum + w * (item.candidate.expectedReturnPct || 8.0);
     }, 0);
 
-    const portVol = Math.sqrt(
-      rawScores.reduce((sum, item) => {
-        const w = weights[item.symbol] || 0;
-        const vol = item.candidate.volatilityPct || 25.0;
-        return sum + Math.pow(w * vol, 2);
-      }, 0)
-    );
+    // 采用 Markowitz 现代资产组合理论计算组合真实波动率: sigma_p = sqrt(w^T * Sigma * w)
+    let portVariance = 0;
+    const n = rawScores.length;
 
+    for (let i = 0; i < n; i++) {
+      const itemI = rawScores[i];
+      const wI = weights[itemI.symbol] || 0;
+      const volI = Math.max(0.1, itemI.candidate.volatilityPct || 25.0);
+      const sectorI = itemI.candidate.sector || "GENERAL";
+
+      // 对角线方差项: w_i^2 * sigma_i^2
+      portVariance += Math.pow(wI * volI, 2);
+
+      // 交叉协方差项: 2 * w_i * w_j * Cov(i, j)
+      for (let j = i + 1; j < n; j++) {
+        const itemJ = rawScores[j];
+        const wJ = weights[itemJ.symbol] || 0;
+        const volJ = Math.max(0.1, itemJ.candidate.volatilityPct || 25.0);
+        const sectorJ = itemJ.candidate.sector || "GENERAL";
+
+        if (params.covMatrix && params.covMatrix[i] && params.covMatrix[i][j] !== undefined) {
+          portVariance += 2 * wI * wJ * params.covMatrix[i][j];
+        } else {
+          // 同板块默认施加 0.65 强相关系数，跨板块默认 0.25 市场基准相关系数
+          const rho = sectorI === sectorJ && sectorI !== "GENERAL" ? 0.65 : 0.25;
+          const covIJ = rho * volI * volJ;
+          portVariance += 2 * wI * wJ * covIJ;
+        }
+      }
+    }
+
+    const portVol = Math.sqrt(Math.max(0.0001, portVariance));
+
+    // 标准金融定义夏普比率: Sharpe = (R_p - R_f) / sigma_p
+    const excessReturn = portExpectedRet - riskFreeRate;
     const expectedSharpeRatio =
       portVol > 0
-        ? Number(((portExpectedRet - (riskFreeRate / 100) * portExpectedRet) / portVol).toFixed(2))
-        : 1.25;
+        ? Number((excessReturn / portVol).toFixed(2))
+        : 0.0;
 
     const symListStr = Object.entries(weights)
       .map(([s, w]) => `${s}: ${(w * 100).toFixed(1)}% ($${allocatedCapitalMap[s]}, ${suggestedSharesMap[s]}股)`)

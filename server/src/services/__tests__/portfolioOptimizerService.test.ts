@@ -107,4 +107,91 @@ describe("PortfolioOptimizerService", () => {
 
     expect(totalSemiWeight).toBeLessThanOrEqual(0.505);
   });
+
+  it("should correctly compute standard Sharpe ratio based on (R_p - R_f) / sigma_p", () => {
+    // 单只标的测试，便于验证精确 Sharpe 公式
+    const candidate = {
+      symbol: "NVDA",
+      expectedReturnPct: 20.0, // 预期收益 20%
+      volatilityPct: 20.0,     // 波动率 20%
+      sector: "AI算力与半导体",
+      confidenceScore: 100,
+      currentPrice: 100,
+    };
+
+    // 投资权重 100%, 行业上限 100%, 无风险利率 4% => R_p = 20%, R_f = 4%, sigma_p = 20%
+    // 预期 Sharpe = (20 - 4) / 20 = 0.80
+    const res = portfolioOptimizerService.optimizeAllocation({
+      candidates: [candidate],
+      totalDeployableCapital: 10000,
+      maxRegimeCapPct: 100.0,
+      singleStockCapPct: 100.0,
+      maxSectorExposurePct: 100.0,
+      riskFreeRate: 4.0,
+    });
+
+    expect(res.optimalWeights["NVDA"]).toBe(1.0);
+    expect(res.expectedSharpeRatio).toBe(0.80);
+  });
+
+  it("should penalize same-sector concentration via Markowitz cross-covariance terms", () => {
+    // 相同板块标的 (rho = 0.65)
+    const sameSectorCandidates = [
+      {
+        symbol: "NVDA",
+        expectedReturnPct: 16.0,
+        volatilityPct: 20.0,
+        sector: "AI算力与半导体",
+        confidenceScore: 100,
+        currentPrice: 100,
+      },
+      {
+        symbol: "AMD",
+        expectedReturnPct: 16.0,
+        volatilityPct: 20.0,
+        sector: "AI算力与半导体",
+        confidenceScore: 100,
+        currentPrice: 100,
+      },
+    ];
+
+    // 跨板块分散化标的 (rho = 0.25)
+    const diversifiedCandidates = [
+      {
+        symbol: "NVDA",
+        expectedReturnPct: 16.0,
+        volatilityPct: 20.0,
+        sector: "AI算力与半导体",
+        confidenceScore: 100,
+        currentPrice: 100,
+      },
+      {
+        symbol: "JNJ",
+        expectedReturnPct: 16.0,
+        volatilityPct: 20.0,
+        sector: "医疗保健与医药",
+        confidenceScore: 100,
+        currentPrice: 100,
+      },
+    ];
+
+    const sameRes = portfolioOptimizerService.optimizeAllocation({
+      candidates: sameSectorCandidates,
+      totalDeployableCapital: 10000,
+      maxRegimeCapPct: 100.0,
+      singleStockCapPct: 50.0,
+      riskFreeRate: 4.0,
+    });
+
+    const diffRes = portfolioOptimizerService.optimizeAllocation({
+      candidates: diversifiedCandidates,
+      totalDeployableCapital: 10000,
+      maxRegimeCapPct: 100.0,
+      singleStockCapPct: 50.0,
+      riskFreeRate: 4.0,
+    });
+
+    // 相同收益下，跨行业分散化组合的真实方差更低，因此夏普比率应严格高于同行业集中组合
+    expect(diffRes.expectedSharpeRatio).toBeGreaterThan(sameRes.expectedSharpeRatio);
+  });
 });

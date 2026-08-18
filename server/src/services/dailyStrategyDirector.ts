@@ -952,20 +952,24 @@ export class DailyStrategyDirector {
 
     screenerRes.actions = optimizedActions;
 
-    // 🌟 TradeMaster EIIE 现代组合理论权重凸优化求解
     const buyCandidates = screenerRes.actions
       .filter((a) => a.action === "BUY" || a.actionType === "OPEN_POSITION" || a.actionType === "ADD_POSITION")
       .map((a) => {
         const snap = snapshotsMap.get(a.symbol.toUpperCase());
-        const turnover = snap?.turnoverRate || 1.5;
+        const curP = a.estimatedPrice || quotesMap.get(a.symbol.toUpperCase()) || 100;
+        const annualizedVol = goalDrivenQuantEngine.calculateAnnualizedVolatility({
+          currentPrice: curP,
+          snapshot: snap,
+        });
+
         return {
           symbol: a.symbol,
           companyName: a.companyName,
           expectedReturnPct: a.targetProfitGoalPct || targetProfitGoalPct,
-          volatilityPct: turnover * 12.0,
+          volatilityPct: annualizedVol,
           sector: a.strategyCategoryLabel || "GENERAL",
           confidenceScore: a.goalAttainmentProbability || 70,
-          currentPrice: a.estimatedPrice || quotesMap.get(a.symbol.toUpperCase()) || 100,
+          currentPrice: curP,
         };
       });
 
@@ -1001,6 +1005,8 @@ export class DailyStrategyDirector {
           availableCash: openDCash,
           totalMarketValue: budgetToUse,
           existingPosition: target.position,
+          snapshot: target.openDSnapshot,
+          usSpecialIntel: target.usSpecialIntel,
         });
 
         const finalAct = invariantCheck.action;
@@ -1095,6 +1101,8 @@ export class DailyStrategyDirector {
           availableCash: openDCash,
           totalMarketValue: budgetToUse,
           existingPosition: item.position,
+          snapshot: item.openDSnapshot,
+          usSpecialIntel: item.usSpecialIntel,
         });
 
         const validatedFallback = invariantCheck.action;

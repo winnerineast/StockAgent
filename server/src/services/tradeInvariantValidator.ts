@@ -1,4 +1,4 @@
-import { ActionItem, StockPositionItem, TradeInvariantStatus } from "../types/stockTypes";
+import { ActionItem, OpenDSnapshotItem, StockPositionItem, TradeInvariantStatus, UsStockSpecialIntel, OrderExecutionStatus } from "../types/stockTypes";
 
 export interface TradeInvariantValidationParams {
   action: ActionItem;
@@ -6,7 +6,14 @@ export interface TradeInvariantValidationParams {
   availableCash: number;
   totalMarketValue?: number;
   existingPosition?: StockPositionItem;
-  positionCapPct?: number; // 默认 0.35 (35%)
+  positionCapPct?: number;          // 默认 0.35 (35%)
+  snapshot?: OpenDSnapshotItem;     // 实时快照 (含成交量与换手率)
+  usSpecialIntel?: UsStockSpecialIntel; // 美股财报与特殊情报
+  daysUntilEarnings?: number;      // 距离财报发布日天数
+  maxAdvParticipationPct?: number; // 单笔最大参与率上限 (默认 2% ADV)
+  commissionPerShare?: number;     // 单股佣金 (默认 $0.005/股)
+  minCommissionFee?: number;       // 单笔最低佣金 (默认 $1.0)
+  slippagePct?: number;            // 预估滑点率 (默认依据波动率自适应 0.15% ~ 0.25%)
 }
 
 export interface TradeInvariantValidationResult {
@@ -32,6 +39,13 @@ export class TradeInvariantValidator {
       totalMarketValue = availableCash,
       existingPosition,
       positionCapPct = 0.35,
+      snapshot,
+      usSpecialIntel,
+      daysUntilEarnings,
+      maxAdvParticipationPct = 0.02,
+      commissionPerShare = 0.005,
+      minCommissionFee = 1.0,
+      slippagePct,
     } = params;
 
     const validatedAction = { ...action };
@@ -53,6 +67,10 @@ export class TradeInvariantValidator {
     passedCount++;
     badges.push("PRICE_VALID");
 
+    if (!validatedAction.orderStatus) {
+      validatedAction.orderStatus = "PENDING_SUBMIT";
+    }
+
     // 1. 买入操作 (BUY / OPEN_POSITION / ADD_POSITION) 不变量
     if (validatedAction.action === "BUY") {
       // 不变量 1.1：买入股数必须为正整数
@@ -66,24 +84,77 @@ export class TradeInvariantValidator {
       }
       passedCount++;
 
-      // 不变量 1.2：买入总金额绝不能突破可用现金与单票持仓上限 (Position Cap)
-      totalChecks++;
-      const effectiveCapital = availableCash > 0 ? availableCash : totalMarketValue;
-      const maxAllocDollar = effectiveCapital > 0 ? effectiveCapital * positionCapPct : curP;
-      const maxSharesByCash = effectiveCapital > 0 ? Math.max(1, Math.floor(effectiveCapital / curP)) : 1;
-      const maxSharesByCap = effectiveCapital > 0 ? Math.max(1, Math.floor(maxAllocDollar / curP)) : 1;
-      const safeSharesLimit = Math.min(maxSharesByCash, maxSharesByCap);
+      // 不变量 1.2.0: 财报日前隔夜跳空防范机制 (Earnings Overnight Gap Shield)
+      let effectiveCapPct = positionCapPct;
+      const daysToEarnings = daysUntilEarnings ?? usSpecialIntel?.daysToEarnings ?? (
+        usSpecialIntel?.earningsRiskLevel === "HIGH" ? 3 : undefined
+      );
 
-      if (validatedAction.suggestedShares > safeSharesLimit && effectiveCapital > 0) {
+      if (daysToEarnings !== undefined && daysToEarnings >= 0 && daysToEarnings <= 3) {
+        effectiveCapPct = positionCapPct * 0.5; // 临近 3 个交易日内发布财报，单票持仓上限缩减 50%
+        badges.push("EARNINGS_RISK_SHIELD");
         notes.push(
-          `建议买入 ${validatedAction.suggestedShares} 股超出单票 ${(positionCapPct * 100).toFixed(0)}% 资金上限或可用现金，已安全截断至 ${safeSharesLimit} 股`
+          `标的 [${validatedAction.symbol}] 临近财报发布日 (${usSpecialIntel?.earningsDate || "3日内"})，为防范隔夜跳空风险，单票持仓上限已自动收缩 50% 至 ${(effectiveCapPct * 100).toFixed(1)}%`
         );
+      }
+
+      // 不变量 1.2：买入总金额绝不能突破可用现金与单票持仓上限 (Position Cap，需扣除既有持仓)
+      totalChecks++;
+      const existingHoldingShares = existingPosition && existingPosition.shares > 0 ? existingPosition.shares : 0;
+      const existingHoldingVal = existingHoldingShares * curP;
+      const totalPortfolioEquity = totalMarketValue > 0 ? totalMarketValue : (availableCash + existingHoldingVal);
+
+      const maxTotalStockCapDollar = totalPortfolioEquity > 0 ? totalPortfolioEquity * effectiveCapPct : 0;
+      const remainingCapDollar = Math.max(0, maxTotalStockCapDollar - existingHoldingVal);
+      const maxSharesByCap = curP > 0 ? Math.floor(remainingCapDollar / curP) : 0;
+      const maxSharesByCash = curP > 0 && availableCash > 0 ? Math.floor(availableCash / curP) : 0;
+      let safeSharesLimit = Math.min(maxSharesByCash, maxSharesByCap);
+
+      // 不变量 1.2.1: ADV 流动性容量防御约束 (单笔订单严禁超过 ADV 的 2%)
+      const adv = snapshot?.averageDailyVolume || snapshot?.volume || 0;
+      if (adv > 0) {
+        const maxSharesByAdv = Math.max(1, Math.floor(adv * maxAdvParticipationPct));
+        validatedAction.advLimitShares = maxSharesByAdv;
+        if (safeSharesLimit > maxSharesByAdv) {
+          safeSharesLimit = maxSharesByAdv;
+        }
+        badges.push("ADV_LIQUIDITY_SAFE");
+      }
+
+      if (validatedAction.suggestedShares > safeSharesLimit) {
+        if (availableCash <= 0 || maxSharesByCash === 0) {
+          notes.push(`可用现金不足 ($${availableCash.toFixed(2)})，无法执行买入建仓，买入股数已置为 0`);
+        } else if (remainingCapDollar <= 0 || maxSharesByCap === 0) {
+          notes.push(
+            `标的 [${validatedAction.symbol}] 既有持仓市值 ($${existingHoldingVal.toFixed(2)}) 已达到或超过单票 ${(positionCapPct * 100).toFixed(0)}% 上限 ($${maxTotalStockCapDollar.toFixed(2)})，加仓股数已置为 0`
+          );
+        } else if (adv > 0 && safeSharesLimit === Math.max(1, Math.floor(adv * maxAdvParticipationPct))) {
+          notes.push(
+            `建议买入 ${validatedAction.suggestedShares} 股超出流动性容量防御上限 (${(maxAdvParticipationPct * 100).toFixed(1)}% ADV: ${safeSharesLimit} 股)，已安全截断至 ${safeSharesLimit} 股`
+          );
+        } else {
+          notes.push(
+            `建议买入 ${validatedAction.suggestedShares} 股超出单票 ${(positionCapPct * 100).toFixed(0)}% 资金上限（扣减既有持仓后剩余可加仓 $${remainingCapDollar.toFixed(2)}）或可用现金 ($${availableCash.toFixed(2)})，已安全截断至 ${safeSharesLimit} 股`
+          );
+        }
         validatedAction.suggestedShares = safeSharesLimit;
         wasClamped = true;
       }
-      validatedAction.estimatedAmount = Number((validatedAction.suggestedShares * curP).toFixed(2));
+
+      // 不变量 1.2.2: 滑点与交易摩擦成本核算 (Slippage & Friction Cost Model)
+      const slipRate = slippagePct ?? (snapshot?.turnoverRate && snapshot.turnoverRate > 5.0 ? 0.25 : 0.15);
+      const slippageCost = Number(((validatedAction.suggestedShares * curP) * (slipRate / 100)).toFixed(2));
+      const estimatedFee = validatedAction.suggestedShares > 0
+        ? Math.max(minCommissionFee, Number((validatedAction.suggestedShares * commissionPerShare).toFixed(2)))
+        : 0;
+
+      validatedAction.slippagePct = slipRate;
+      validatedAction.estimatedSlippageCost = slippageCost;
+      validatedAction.estimatedFee = estimatedFee;
+      validatedAction.estimatedAmount = Number((validatedAction.suggestedShares * curP + slippageCost + estimatedFee).toFixed(2));
       passedCount++;
       badges.push("CASH_BOUND_SAFE");
+      badges.push("SLIPPAGE_PROTECTED");
 
       // 不变量 1.3：点位单调性约束 (止损价 < 挂单现价 < 目标价)
       totalChecks++;
@@ -114,7 +185,7 @@ export class TradeInvariantValidator {
       passedCount++;
       badges.push("STOP_LOSS_INTEGRITY");
 
-      // 不变量 1.4：建仓区间合理性约束 (EntryZone: 0.98 * curP <= min <= max <= 1.02 * curP)
+      // 不变量 1.4：建仓区间合理性约束 (EntryZone: 包含滑点缓冲)
       totalChecks++;
       if (
         !validatedAction.entryZone ||
@@ -124,7 +195,7 @@ export class TradeInvariantValidator {
       ) {
         validatedAction.entryZone = {
           min: Number((curP * 0.992).toFixed(2)),
-          max: Number((curP * 1.006).toFixed(2)),
+          max: Number((curP * (1.006 + slipRate / 100)).toFixed(2)),
         };
         wasClamped = true;
       }
