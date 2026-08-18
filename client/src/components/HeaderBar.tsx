@@ -105,9 +105,12 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-xl font-bold tracking-tight text-white">StockAgent Studio</h1>
+                <h1 className="text-xl font-bold tracking-tight text-white flex items-center gap-1.5">
+                  <span>事后诸葛亮</span>
+                  <span className="text-sm font-medium text-cyan-400 font-mono">Hindsight.AI</span>
+                </h1>
                 <span className="px-2 py-0.5 text-[11px] font-semibold rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
-                  全时态量化中枢
+                  盘后量化推演终端
                 </span>
               </div>
               <p className="text-xs text-slate-400 flex items-center gap-1.5 mt-0.5">

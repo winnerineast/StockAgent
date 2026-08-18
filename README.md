@@ -1,8 +1,49 @@
-# StockAgent Studio - Intelligent Stock Selection, Deduction & Retrospective Trading System (SPA)
+# 🧙‍♂️ Hindsight.AI (事后诸葛亮)
+### The Intelligent Post-Market Quant Deduction & Retrospective Trading Terminal (StockAgent Studio)
 
 **English** | [中文文档](README_CN.md)
 
-> **Tailored for Working Professionals**: A daily-frequency, goal-oriented swing-trading and retrospective system. Powered by **100% Real-Time MooMoo OpenD Native TCP Data** + **Local Docker/WSL SearXNG Deep Search** + **Hardware-Aware Ollama Local LLMs**, deeply integrating **vn.py's classical quantitative risk control architecture**, **TradeMaster Market Dynamics Modeling & PRUDEX-Compass Benchmark**, and **FinAgent Dual-Level Memory Reflection**. **Strictly prohibits automated machine execution**, delivering precision quantitative rebalance directives with slippage buffer limits for safe manual placement.
+> **🌟 The Hindsight Philosophy**:
+> Retail traders often suffer from emotional intraday noise, lamenting in regret after being trapped: *"If only I had known..."* (a syndrome playfully known in Chinese as being a *"Monday-Morning Zhuge Liang"*).
+> Top quantitative desks know the unforgiving reality: **There are no 'what-ifs' in live markets—the highest-conviction predictive alpha comes directly from the most rigorous, cold-blooded post-mortem reflection.**
+> **Hindsight.AI** transforms retrospective analysis into a disciplined quantitative weapon: Spend **5 minutes after market close** to distill hard market facts, adapt to macro regime shifts, and deduce mathematically bounded limit-order directives for tomorrow's opening bell.
+
+---
+
+<p align="center">
+  <img src="./docs/images/hindsight_terminal_demo.gif" onerror="this.src='./docs/images/01_studio_dashboard_cover.png'" alt="Hindsight.AI Quant Terminal Live Demo" width="100%" />
+</p>
+
+<p align="center">
+  <a href="#-quick-start"><img src="https://img.shields.io/badge/License-MIT-emerald.svg?style=flat-square" alt="License" /></a>
+  <img src="https://img.shields.io/badge/Data-MooMoo%20OpenD%20Realtime%20TCP-blue.svg?style=flat-square" alt="MooMoo OpenD" />
+  <img src="https://img.shields.io/badge/Search-SearXNG%20Docker%20Local-cyan.svg?style=flat-square" alt="SearXNG" />
+  <img src="https://img.shields.io/badge/LLM-Local%20Ollama%20Qwen%203.8%2F7B-purple.svg?style=flat-square" alt="Ollama Local LLM" />
+  <img src="https://img.shields.io/badge/Dynamics-TradeMaster%20MDM-rose.svg?style=flat-square" alt="TradeMaster MDM" />
+  <img src="https://img.shields.io/badge/Radar-PRUDEX--Compass%206--Axis-amber.svg?style=flat-square" alt="PRUDEX-Compass" />
+  <img src="https://img.shields.io/badge/Guardrails-FINOS%20Legend%20Invariants-green.svg?style=flat-square" alt="FINOS Legend" />
+</p>
+
+---
+
+## 🏛️ What is "事后诸葛亮" (Zhuge Liang in Hindsight)?
+
+> **Historical & Cultural Context for Global Users**:
+> **Zhuge Liang (诸葛亮, 181–234 AD)** is revered in Eastern history as the archetypal master strategist, tactician, and statesman (renowned for calculating every battle invariant and logistical constraint before marching into the field).
+> In Chinese folklore, the idiom *"事后诸葛亮"* (literally *"A Zhuge Liang in hindsight"*) is akin to the Western saying *"Monday-morning quarterback"* or *"Captain Hindsight"*.
+> 
+> **Hindsight.AI** flips this idiom on its head: **In quantitative finance, disciplined retrospective analysis is the exact engine of foresight.** By coupling FinAgent dual-level reflection memory with NTU TradeMaster macro dynamics, every past trading friction and drawdown is mathematically codified into tomorrow's rigid risk invariants.
+
+---
+
+## ⚡ 3 Core Pillars of Hindsight.AI
+
+1. **🔍 Automated Post-Mortem Attribution Pipeline**:
+   After market close, the system reconciles your real-time holdings against actual execution fills, combining SearXNG Tier-1 news disambiguation with OpenD institutional capital flows to identify root causes behind P&L swings.
+2. **🧠 FinAgent Dual-Level Memory Reflection (Zero Repeat Mistakes)**:
+   Drawdowns from chasing tops or violating stops are automatically written into L2 Global Strategic Rules and L1 Single-Stock Tactical Reflections, hard-blocking high-risk setups in subsequent sessions.
+3. **🛡️ Strictly Zero Automated Black-Box Execution (Human-in-the-Loop)**:
+   Avoids runaway AI bugs or liquidation spirals. Output directives specify **exact share counts, monotonic stop losses ($SL < P < TP$), and EntryZone limit-order slippage bands** for quick manual placement.
 
 ---
 

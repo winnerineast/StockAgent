@@ -1,20 +1,53 @@
-# StockAgent Studio - 上班族低频智能操盘与策略复盘系统 (SPA)
+# 🧙‍♂️ 事后诸葛亮 (Hindsight.AI)
+### 专为上班族量身打造的盘后量化复盘与先验推演终端 (StockAgent Studio)
 
 [English Version](README.md) | **中文文档**
 
-> **专为上班族量身打造**：以“天”为单位的低频下班操盘与复盘系统。基于 **100% 真实 MooMoo OpenD 原生 TCP 实盘通道** + **本地 Docker/WSL SearXNG 极速全网搜索** + **硬件自适应 Ollama 本地大模型**，深度融合 **vn.py 经典量化风控架构**、**TradeMaster 宏观动力学与 PRUDEX-Compass 体系** 及 **FinAgent 双层记忆反思**。**严禁机器自动下单**，提供精准到股数、入场区间与限价滑点保护的定量调仓指南。
+> **💡 核心交易哲学**：
+> 散户总在盘中情绪化追涨杀跌，在亏损被套后懊恼自嘲：“早知道就不买了，我是事后诸葛亮！”；
+> 但顶级对冲基金与量化交易员深知：**实盘里没有如果，最极致的先见之明，恰恰来自最冷酷、最严谨的「事后诸葛亮」。**
+> 本系统将民间的自嘲升级为科学的量化武器——**每天收盘后花 5 分钟深度复盘，沉淀教训，为次日开盘输出具备刚性风控不变量的先验挂单决策。**
 
 ---
 
-## 📸 系统实机界面与核心功能使用指南 (Visual User Guide)
+<p align="center">
+  <img src="./docs/images/hindsight_terminal_demo.gif" onerror="this.src='./docs/images/01_studio_dashboard_cover.png'" alt="事后诸葛亮 (Hindsight.AI) 交易终端实机演示" width="100%" />
+</p>
 
-本系统的核心目标是帮助上班族在**每天收盘后花 5 分钟**快速审视实盘持仓、研判宏观动力学、获取具备严格风控防呆的调仓指令，并在次日开盘前以限价单手动挂单。以下按功能模块详细介绍系统界面与使用方法：
+<p align="center">
+  <a href="#-快速开始-quick-start"><img src="https://img.shields.io/badge/License-MIT-emerald.svg?style=flat-square" alt="License" /></a>
+  <img src="https://img.shields.io/badge/Data-MooMoo%20OpenD%20Realtime%20TCP-blue.svg?style=flat-square" alt="MooMoo OpenD" />
+  <img src="https://img.shields.io/badge/Search-SearXNG%20Docker%20Local-cyan.svg?style=flat-square" alt="SearXNG" />
+  <img src="https://img.shields.io/badge/LLM-Local%20Ollama%20Qwen%203.8%2F7B-purple.svg?style=flat-square" alt="Ollama Local LLM" />
+  <img src="https://img.shields.io/badge/Dynamics-TradeMaster%20MDM-rose.svg?style=flat-square" alt="TradeMaster MDM" />
+  <img src="https://img.shields.io/badge/Radar-PRUDEX--Compass%206--Axis-amber.svg?style=flat-square" alt="PRUDEX-Compass" />
+  <img src="https://img.shields.io/badge/Guardrails-FINOS%20Legend%20Invariants-green.svg?style=flat-square" alt="FINOS Legend" />
+</p>
 
 ---
 
-### 1. 🎛️ 封面与工作台总览 (Cover & Studio Dashboard)
+## ⚡ 为什么叫「事后诸葛亮」？三大反常识核心价值
 
-工作台顶部整合了系统状态、交易时态、实盘核心资产 KPI 与全流程执行步进器，让用户对系统运行环境与实盘资产一览无余。
+在传统语境中，“事后诸葛亮”常被用来讽刺马后炮；但在量化交易的严酷战场上，**无法被量化归因的历史教训，注定会在未来以爆仓的形式重演**：
+
+1. **🔍 拒绝拍大腿，把“后验死因归因”做成自动化流水线 (Post-Mortem Pipeline)**：
+   每天美股收盘后，系统自动拉取当日持仓与清仓标的真实成交，结合 SearXNG 权威通讯社信源与主力资金流，完成**盈亏与死因归因**，不再让真金白银买来的教训白白流失。
+2. **🧠 FinAgent 双层记忆反哺：绝不在同一个坑里跌倒两次 (Dual-Level Reflection)**：
+   追高被套、违背止损、财报日前夕博弈等失败教训，会被自动沉淀至全局战略原则库与单票战术库中。次日推演时，大模型强制对比历史教训，一旦触发危险形态立即**刚性熔断**。
+3. **🛡️ 严禁机器全自动下单：捍卫上班族的资金主权 (Human-in-the-Loop)**：
+   拒绝黑盒全自动交易，系统输出精准到**股数、严格止损点 ($SL < P < TP$) 及限价单滑点保护区间 (EntryZone)**。上班族收盘后花 5 分钟审视决策，开盘前手动挂好限价单，白天安心本职工作。
+
+---
+
+## 📸 酷炫交易终端全景与实机使用指南 (Visual User Guide)
+
+本系统的核心目标是帮助上班族在**每天收盘后花 5 分钟**快速审视实盘持仓、研判宏观动力学、获取具备严格风控防呆的调仓指令，并在次日开盘前以限价单手动挂单。
+
+---
+
+### 1. 🎛️ 封面工作台与时态罗盘 (Cover & Studio Dashboard)
+
+工作台顶部整合了系统硬件健康、交易时态状态机、实盘核心资产 KPI 与全流程执行步进器，让用户对系统运行环境与实盘资产一览无余。
 
 ![工作台全景总览与时态罗盘](./docs/images/01_studio_dashboard_cover.png)
 
