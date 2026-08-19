@@ -10,10 +10,11 @@ import {
   buildDynamicEcosystemForSymbol,
 } from "./stockKnowledgeBaseData";
 import { graphQuantitativeEngine } from "./graphQuantitativeEngine";
+import { marketDataGateway } from "./marketDataGateway";
 
 export class StockKnowledgeGraphStoreService {
   /**
-   * 从数据库获取特定股票基本面/财报指标
+   * 从数据库获取特定股票基本面/财报指标 (自动通过统一 MarketDataGateway 兜底补齐)
    */
   public async getFundamentals(symbol: string): Promise<StockFundamentals | null> {
     const symbolUpper = symbol.toUpperCase();
@@ -21,7 +22,7 @@ export class StockKnowledgeGraphStoreService {
       const record = await prisma.stockFundamentalsStore.findUnique({
         where: { symbol: symbolUpper },
       });
-      if (record) {
+      if (record && (record.peRatio || record.revenueGrowthPct)) {
         return {
           symbol: record.symbol,
           companyName: record.companyName || record.symbol,
@@ -34,6 +35,16 @@ export class StockKnowledgeGraphStoreService {
         };
       }
     } catch (e) {}
+
+    // 🌟 多源降级容灾：若本地 SQLite 暂无该标的基本面，统一从 MarketDataGateway 抓取并缓存入库
+    try {
+      const unifiedFund = await marketDataGateway.fetchFundamentals(symbolUpper);
+      if (unifiedFund) {
+        await this.upsertFundamentals(unifiedFund);
+        return unifiedFund;
+      }
+    } catch (e) {}
+
     return null;
   }
 
@@ -156,9 +167,21 @@ export class StockKnowledgeGraphStoreService {
       else if (daysDiff > 30) recencyWeight = 0.6;
       else if (daysDiff > 7) recencyWeight = 0.85;
 
+      const baseHebbian = e.hebbianWeight ?? (e.exposurePct ? Math.min(1.0, e.exposurePct * 0.8 + 0.15) : 0.35);
+      const decayedHebbian = Number((baseHebbian * Math.exp(-0.02 * daysDiff)).toFixed(4));
+      const semantic =
+        e.relationSemantic ||
+        (e.relationType === "COMPETITOR" || e.impact === "NEGATIVE"
+          ? "COMPETE"
+          : decayedHebbian >= 0.5
+          ? "SUPPORT"
+          : "RELATED");
+
       return {
         ...e,
         recencyWeight: Number(recencyWeight.toFixed(2)),
+        hebbianWeight: decayedHebbian,
+        relationSemantic: semantic,
       };
     });
   }

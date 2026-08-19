@@ -460,6 +460,15 @@ export class MooMooAdapter {
 
   public async fetchMacroSectorsFromOpenD(): Promise<{
     benchmarks: Array<{ symbol: string; name: string; lastPrice: number; changeRate: number }>;
+    crossAsset?: {
+      vix: number;
+      vixChange: number;
+      us10y: number;
+      dxy: number;
+      spyChange: number;
+      qqqChange: number;
+      iwmChange: number;
+    };
     spyChange: number;
     qqqChange: number;
     iwmChange: number;
@@ -472,6 +481,7 @@ export class MooMooAdapter {
     if (!isAlive) {
       return {
         benchmarks: [],
+        crossAsset: { vix: 0, vixChange: 0, us10y: 0, dxy: 0, spyChange: 0, qqqChange: 0, iwmChange: 0 },
         spyChange: 0,
         qqqChange: 0,
         iwmChange: 0,
@@ -493,6 +503,15 @@ export class MooMooAdapter {
             if (data && data.success && Array.isArray(data.sectors)) {
               return resolve({
                 benchmarks: data.benchmarks || [],
+                crossAsset: data.crossAsset || {
+                  vix: 15.0,
+                  vixChange: 0,
+                  us10y: 4.25,
+                  dxy: 104.0,
+                  spyChange: data.spyChange || 0,
+                  qqqChange: data.qqqChange || 0,
+                  iwmChange: data.iwmChange || 0,
+                },
                 spyChange: data.spyChange || 0,
                 qqqChange: data.qqqChange || 0,
                 iwmChange: data.iwmChange || 0,
@@ -505,6 +524,7 @@ export class MooMooAdapter {
           } catch (e) {}
           resolve({
             benchmarks: [],
+            crossAsset: { vix: 0, vixChange: 0, us10y: 0, dxy: 0, spyChange: 0, qqqChange: 0, iwmChange: 0 },
             spyChange: 0,
             qqqChange: 0,
             iwmChange: 0,

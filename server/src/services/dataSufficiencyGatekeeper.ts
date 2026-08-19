@@ -7,6 +7,7 @@ import {
   StockFundamentals,
   StockKnowledgeGraphItem,
 } from "../types/stockTypes";
+import { dataFreshnessGuard } from "./dataFreshnessGuard";
 
 export const DEFAULT_SUFFICIENCY_CONFIG: Required<DataSufficiencyConfig> = {
   requireOrderBookPrice: true,
@@ -65,8 +66,8 @@ export class DataSufficiencyGatekeeper {
       marketPhase === "POST_MARKET" ||
       marketPhase === "OVERNIGHT_CLOSED";
 
-    // 智能价格提取：在休市/周末时段，若无实时跳动价格，自动采用上一交易日收盘价或前收价
-    const effectivePrice =
+    // 智能价格提取与数据时效/正确性校验 (通过 DataFreshnessGuard 过滤)
+    const rawPrice =
       snapshot?.lastPrice && snapshot.lastPrice > 0
         ? snapshot.lastPrice
         : snapshot?.prevClosePrice && snapshot.prevClosePrice > 0
@@ -74,6 +75,13 @@ export class DataSufficiencyGatekeeper {
         : snapshot?.closePrice && snapshot.closePrice > 0
         ? snapshot.closePrice
         : undefined;
+
+    const priceSanity = dataFreshnessGuard.validatePriceSanity({
+      primaryPrice: rawPrice,
+      prevClosePrice: snapshot?.prevClosePrice,
+    });
+
+    const effectivePrice = priceSanity.isValid ? priceSanity.sanitizedPrice : undefined;
 
     const missingItems: MissingDataDiagnostic[] = [];
 
@@ -148,21 +156,22 @@ export class DataSufficiencyGatekeeper {
       }
     }
 
-    // 4. 财务基本面与估值指标校验
+    // 4. 财务基本面与估值指标校验 (支持亏损成长股切换与 DataFreshnessGuard 正确性清洗)
     if (config.requireFundamentalsPe) {
+      const fundSanity = dataFreshnessGuard.validateFundamentalsSanity(fundamentals);
       const pe = fundamentals?.peRatio ?? snapshot?.peRatio;
       const hasValidPe = pe !== undefined && pe !== null && !isNaN(pe) && pe > 0;
-      if (!hasValidPe) {
-        const hasRevenueGrowth = fundamentals?.revenueGrowthPct !== undefined;
-        if (!hasRevenueGrowth) {
-          missingItems.push({
-            category: "FUNDAMENTALS",
-            field: "peRatio",
-            severity: "CRITICAL",
-            description: `标的市盈率 (PE) 与财务基本面数据未同步`,
-            remedyAction: `该标的为新加入自选/雷达的股票，本地财报库暂未录入其 PE 估值与营收指标。点击该标的卡片中的「知识图谱」即可快速补录基本面。`,
-          });
-        }
+      const hasRevenueGrowth = fundamentals?.revenueGrowthPct !== undefined;
+      const isLossMakingValid = fundSanity.isLossMaking && hasRevenueGrowth;
+
+      if (!hasValidPe && !hasRevenueGrowth && !isLossMakingValid) {
+        missingItems.push({
+          category: "FUNDAMENTALS",
+          field: "peRatio",
+          severity: "CRITICAL",
+          description: `标的市盈率 (PE) 与财务基本面数据未同步`,
+          remedyAction: `该标的为新加入自选/雷达的股票，本地财报库暂未录入其 PE 估值与营收指标。点击该标的卡片中的「知识图谱」即可快速补录基本面。`,
+        });
       }
     }
 

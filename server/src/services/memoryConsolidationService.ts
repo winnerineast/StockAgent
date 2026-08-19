@@ -115,6 +115,8 @@ export class MemoryConsolidationService {
             confidenceWeight: 1.0,
             firstLearnedDate: item.date || todayStr,
             lastReinforcedDate: todayStr,
+            validStart: item.date || todayStr,
+            validEnd: null, // +∞ 活跃有效
             isArchived: false,
             evidenceLogsJson: JSON.stringify(item.id ? [item.id] : []),
           },
@@ -193,6 +195,11 @@ export class MemoryConsolidationService {
         lastReinforcedDate: r.lastReinforcedDate,
         isArchived: false,
         evidenceLogIds: evidenceIds,
+        validStart: r.validStart || r.firstLearnedDate,
+        validEnd: r.validEnd,
+        supersededById: r.supersededById || undefined,
+        supersedeReason: r.supersedeReason || undefined,
+        evidenceWeightSum: r.evidenceWeightSum ?? 1.0,
       });
     }
 

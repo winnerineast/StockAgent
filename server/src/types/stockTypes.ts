@@ -226,6 +226,12 @@ export interface ConsolidatedPrincipleItem {
   lastReinforcedDate: string;
   isArchived: boolean;
   evidenceLogIds?: string[];
+  // Holistic Context 时态与变更追溯增强
+  validStart?: string;          // 生效起始日期 YYYY-MM-DD
+  validEnd?: string | null;     // 失效截止日期 YYYY-MM-DD (null 表示当前持续有效 +∞)
+  supersededById?: string;      // 被哪条新原则取代
+  supersedeReason?: string;     // 演进/推翻的原因证据摘要
+  evidenceWeightSum?: number;   // 支撑此原则的累计证据加权分
 }
 
 export interface TemporalEvolutionItem {
@@ -442,6 +448,8 @@ export interface KnowledgeGraphEntityNode {
   createdAt?: string;
 }
 
+export type GraphRelationSemanticType = "SUPPORT" | "COMPETE" | "RELATED" | "SUPERSEDE";
+
 export interface KnowledgeGraphRelationEdge {
   source: string;
   target: string;
@@ -453,6 +461,11 @@ export interface KnowledgeGraphRelationEdge {
   impact: "POSITIVE" | "NEGATIVE" | "NEUTRAL";
   recencyWeight?: number; // 0.0 - 1.0 time decay factor
   createdAt?: string;
+  // Holistic Context 赫布活边与 4-Type 语义关系
+  relationSemantic?: GraphRelationSemanticType; // 论文 4-edge 词汇表 (SUPPORT / COMPETE / RELATED / SUPERSEDE)
+  hebbianWeight?: number;                       // 0.0 ~ 1.0 赫布动态权重 (初始 0.15, >=0.5 激活为 Living Edge)
+  lastCoActivatedAt?: string;                   // 上次共激活/共检索日期 YYYY-MM-DD
+  coActivationCount?: number;                   // 历史累计共激活次数
 }
 
 export interface KnowledgeGraphTripletItem {
@@ -668,13 +681,42 @@ export interface MacroMarketIntel {
   macroSnapshot?: DailyMacroSnapshotDTO;
 }
 
+export interface AgentLLMTraceItem {
+  id: string;
+  agentRole: "MACRO_ANALYST" | "STOCK_BULL_BEAR_DEBATER" | "HEBBIAN_ARBITRATOR" | "QUANT_OPTIMIZER";
+  agentLabel: string;
+  symbol?: string;
+  companyName?: string;
+  modelName: string;
+  // 🌟 100% 真实输入与输出
+  systemPrompt?: string;
+  userPrompt: string;
+  thinkingText?: string;
+  rawResponseText: string;
+  parsedOutput?: any;
+  // 🌟 核心 Context 细节
+  knowledgeGraphTriplets?: string[];
+  searxngNewsSnippets?: string[];
+  fundamentalsSnippet?: string;
+  // 🌟 执行元数据
+  durationMs: number;
+  status: "SUCCESS" | "TIMEOUT_FALLBACK" | "ERROR_FALLBACK";
+  timestamp: string;
+}
+
 export interface DeductionPipelineData {
   modelUsed: string;
-  promptContextText: string;
-  knowledgeGraphContext: string;
-  searxngNewsContext: string;
-  positionsContext: string;
-  lessonsContext: string;
+  totalDurationMs: number;
+  totalTokensEstimated?: number;
+  traces: AgentLLMTraceItem[]; // 全量多 Agent 真实调用链路
+  macroSummaryPrompt?: string;
+  macroRawResponse?: string;
+  // 向后兼容旧版字段
+  promptContextText?: string;
+  knowledgeGraphContext?: string;
+  searxngNewsContext?: string;
+  positionsContext?: string;
+  lessonsContext?: string;
   rawOllamaOutput?: string;
 }
 
@@ -857,5 +899,174 @@ export interface DailyAllocationOutput {
   recentlyClearedPositions?: StockPositionItem[];
   narrativeReport: string;
 }
+
+// =========================================================================
+// 🌐 Holistic Context 认知图谱与证据仲裁契约
+// =========================================================================
+
+export type EvidenceSourceType =
+  | "MOOMOO_ORDERBOOK"
+  | "SEC_FILING"
+  | "TIME_FM"
+  | "ANALYST_REPORT"
+  | "NEWS_SEARCH"
+  | "USER_INPUT";
+
+export interface EvidenceItemForConfidence {
+  id: string;
+  sourceType: EvidenceSourceType;
+  reliability?: number;
+  timestamp: string;
+  contentSummary?: string;
+}
+
+export interface ConflictArbitrationResult {
+  status: "BULL_DOMINANT" | "BEAR_DOMINANT" | "CONTESTED";
+  dominantScore: number;
+  bullScore: number;
+  bearScore: number;
+  scoreDiff: number;
+  isContested: boolean;
+  explanation: string;
+  recommendedStance: "PROCEED_LONG" | "PROCEED_SHORT" | "REDUCE_EXPOSURE_AND_WAIT";
+}
+
+export interface AbstentionDecision {
+  shouldAbstain: boolean;
+  reason?: string;
+  maxConfidence: number;
+  threshold: number;
+  contestedRisk: boolean;
+  fallbackAction: StockActionVerdict;
+}
+
+// =========================================================================
+// 🎨 多数据源溯源 (Data Provenance)、时效性与正确性校验契约
+// =========================================================================
+
+export type MarketDataSource =
+  | "MOOMOO_OPEND"     // 🟢 MooMoo 实盘实时 (Level-2 资金流/逐笔撮合)
+  | "YAHOO_FINANCE"    // 🟣 Yahoo Finance 全球多源备用行情 & 财报
+  | "SEARXNG_SEARCH"   // 🔵 SearXNG 全网聚合新闻 & 催化
+  | "SEC_EDGAR"        // 🟡 SEC 官方 10-K/10-Q 披露 & 8-K 黑天鹅
+  | "GOOGLE_TIMEFM"    // 🔷 Google TimeFM 工业级时序动量预测
+  | "LOCAL_CACHE";     // ⚪ 本地 SQLite 知识库 & 历史推演快照
+
+export type DataFreshnessStatus =
+  | "FRESH"            // 🟢 黄金时效 (盘中<=15分钟 / 盘后前收有效)
+  | "DELAYED"          // 🟡 轻度延迟 (15分钟 ~ 24小时)
+  | "STALE";           // 🔴 过时陈旧 (>24小时 / 需强制刷新)
+
+export type DataValidityStatus =
+  | "VALID"            // ✅ 物理合法且多源一致
+  | "CROSS_FLAGGED"    // ⚠️ 多源比对存在轻度偏离 (已自动调和)
+  | "INVALID";         // ❌ 异常脏数据 (已被清洗过滤)
+
+export interface ProvenanceTaggedField<T> {
+  value: T;
+  source: MarketDataSource;
+  sourceLabel: string;
+  sourceColor: string; // Tailwind color class / badge theme
+  freshness: DataFreshnessStatus;
+  validity: DataValidityStatus;
+  verifiedAt: string;  // 校验时间戳 ISO
+  warningNote?: string;
+}
+
+export interface DataFreshnessReport {
+  symbol: string;
+  overallStatus: DataFreshnessStatus;
+  overallValidity: DataValidityStatus;
+  quoteSource: MarketDataSource;
+  fundamentalsSource: MarketDataSource;
+  isPriceFresh: boolean;
+  isFundamentalsValid: boolean;
+  priceCrossCheckDeviationPct?: number;
+  flags: string[];
+  evaluatedAt: string;
+}
+
+// =========================================================================
+// 🚀 统一市场数据提供者门面 (MarketDataGateway) 契约
+// =========================================================================
+
+export interface UnifiedQuote {
+  symbol: string;
+  name: string;
+  price: number;
+  prevClose: number;
+  changeRate: number;
+  openPrice?: number;
+  highPrice?: number;
+  lowPrice?: number;
+  volume?: number;
+  turnoverRate?: number;
+  peRatio?: number;
+  // 🌟 自动注入的溯源 Badge 元数据
+  dataSource: MarketDataSource;
+  sourceLabel: string;
+  sourceColor: string;
+  badgeClass: string;
+  freshness: DataFreshnessStatus;
+  validity: DataValidityStatus;
+  verifiedAt: string;
+  confidence: number;
+}
+
+export interface UnifiedFundamentals {
+  symbol: string;
+  companyName?: string;
+  peRatio?: number;
+  revenueGrowthPct?: number;
+  netMarginPct?: number;
+  debtToEquity?: number;
+  nextEarningsDate?: string;
+  fundamentalSummary?: string;
+  // 🌟 自动注入的溯源 Badge 元数据
+  dataSource: MarketDataSource;
+  sourceLabel: string;
+  sourceColor: string;
+  badgeClass: string;
+  freshness: DataFreshnessStatus;
+  validity: DataValidityStatus;
+  verifiedAt: string;
+  confidence: number;
+}
+
+export interface UnifiedMacroSector {
+  sectorId: string;
+  name: string;
+  etfSymbol: string;
+  changePercent: number;
+  inFlow: number;
+  mainInFlow: number;
+  dataSource: MarketDataSource;
+  sourceLabel: string;
+  badgeClass: string;
+  freshness: DataFreshnessStatus;
+}
+
+export interface UnifiedCapitalFlow {
+  symbol: string;
+  inFlow: number;
+  mainInFlow: number;
+  trend: "INFLOW" | "OUTFLOW" | "NEUTRAL";
+  dataSource: MarketDataSource;
+  sourceLabel: string;
+  badgeClass: string;
+  freshness: DataFreshnessStatus;
+}
+
+export interface MarketDataGatewayConfig {
+  primaryQuoteSource: MarketDataSource;
+  fallbackQuoteSource: MarketDataSource;
+  primaryFundamentalsSource: MarketDataSource;
+  fallbackFundamentalsSource: MarketDataSource;
+  enableCrossCheck: boolean;
+  maxCrossCheckDeviationPct: number;
+}
+
+
+
 
 

@@ -681,23 +681,39 @@ export const SingleStockDeductionModal: React.FC<SingleStockDeductionModalProps>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
                       <div className="text-[10px] text-slate-400">市盈率 PE (TTM)</div>
-                      <div className="text-base font-bold text-white font-mono mt-0.5">{fund?.peRatio ?? item?.openDSnapshot?.peRatio ?? "28.5"}</div>
-                      <div className="text-[10px] text-emerald-400">估值分位数: 42%</div>
+                      <div className="text-base font-bold text-white font-mono mt-0.5">
+                        {fund?.peRatio ?? item?.openDSnapshot?.peRatio ?? "--"}
+                      </div>
+                      <div className="text-[10px] text-emerald-400">
+                        {fund?.peRatio || item?.openDSnapshot?.peRatio ? "动态估值" : "--"}
+                      </div>
                     </div>
                     <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
                       <div className="text-[10px] text-slate-400">营收同比增速</div>
-                      <div className="text-base font-bold text-emerald-400 font-mono mt-0.5">+{fund?.revenueGrowthPct ?? "24.6"}%</div>
-                      <div className="text-[10px] text-slate-400">高于行业均值</div>
+                      <div className="text-base font-bold text-emerald-400 font-mono mt-0.5">
+                        {fund?.revenueGrowthPct !== undefined ? `+${fund.revenueGrowthPct}%` : "--"}
+                      </div>
+                      <div className="text-[10px] text-slate-400">
+                        {fund?.revenueGrowthPct !== undefined ? "财务基本面" : "--"}
+                      </div>
                     </div>
                     <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
                       <div className="text-[10px] text-slate-400">净利润率 Net Margin</div>
-                      <div className="text-base font-bold text-cyan-300 font-mono mt-0.5">{fund?.netMarginPct ?? "31.2"}%</div>
-                      <div className="text-[10px] text-slate-400">盈利壁垒稳固</div>
+                      <div className="text-base font-bold text-cyan-300 font-mono mt-0.5">
+                        {fund?.netMarginPct !== undefined ? `${fund.netMarginPct}%` : "--"}
+                      </div>
+                      <div className="text-[10px] text-slate-400">
+                        {fund?.netMarginPct !== undefined ? "盈利能力" : "--"}
+                      </div>
                     </div>
                     <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
                       <div className="text-[10px] text-slate-400">下次财报日</div>
-                      <div className="text-base font-bold text-amber-300 font-mono mt-0.5">{fund?.nextEarningsDate ?? "2026-09-15"}</div>
-                      <div className="text-[10px] text-slate-400">距离今日还有 30 天</div>
+                      <div className="text-base font-bold text-amber-300 font-mono mt-0.5">
+                        {fund?.nextEarningsDate || "待公告"}
+                      </div>
+                      <div className="text-[10px] text-slate-400">
+                        {fund?.nextEarningsDate ? "财报窗口期" : "--"}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -725,9 +741,11 @@ export const SingleStockDeductionModal: React.FC<SingleStockDeductionModalProps>
                     <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
                       <div className="text-[10px] text-slate-400">日换手率 Turnover</div>
                       <div className="text-sm font-bold text-white font-mono mt-0.5">
-                        {item?.openDSnapshot?.turnoverRate ? `${item.openDSnapshot.turnoverRate.toFixed(2)}%` : "1.85%"}
+                        {item?.openDSnapshot?.turnoverRate !== undefined ? `${item.openDSnapshot.turnoverRate.toFixed(2)}%` : "--"}
                       </div>
-                      <div className="text-[10px] text-slate-400">交投活跃度正常</div>
+                      <div className="text-[10px] text-slate-400">
+                        {item?.openDSnapshot?.turnoverRate !== undefined ? "交投活跃度" : "--"}
+                      </div>
                     </div>
                   </div>
                 </div>

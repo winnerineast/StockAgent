@@ -18,6 +18,8 @@ import { marketDynamicsService } from "./marketDynamicsService";
 import { portfolioOptimizerService } from "./portfolioOptimizerService";
 import { prudexCompassService } from "./prudexCompassService";
 import { memoryConsolidationService } from "./memoryConsolidationService";
+import { marketDataGateway } from "./marketDataGateway";
+import { dataFreshnessGuard } from "./dataFreshnessGuard";
 import {
   DailyAllocationOutput,
   StockPositionItem,
@@ -167,15 +169,7 @@ function buildEvidence3PillarsHighlights(
 export class DailyStrategyDirector {
   public currentActiveStage: StrategyProgressStage | null = null;
   public liveStageData: any = {};
-  public liveDeductionPipeline: {
-    modelUsed: string;
-    promptContextText: string;
-    knowledgeGraphContext: string;
-    searxngNewsContext: string;
-    positionsContext: string;
-    lessonsContext: string;
-    rawOllamaOutput?: string;
-  } | null = null;
+  public liveDeductionPipeline: DeductionPipelineData | null = null;
 
   public async checkPreflightReadiness(): Promise<{
     isAllReady: boolean;
@@ -279,15 +273,7 @@ export class DailyStrategyDirector {
     openDStatus: { connected: boolean; message: string };
     searxngStatus: { connected: boolean; message: string };
     ollamaStatus: { connected: boolean; message: string };
-    deductionPipeline: {
-      modelUsed: string;
-      promptContextText: string;
-      knowledgeGraphContext: string;
-      searxngNewsContext: string;
-      positionsContext: string;
-      lessonsContext: string;
-      rawOllamaOutput?: string;
-    };
+    deductionPipeline: DeductionPipelineData;
     output: DailyAllocationOutput;
     retroPnL: object;
   }> {
@@ -399,9 +385,9 @@ export class DailyStrategyDirector {
     // 🌟 计算并锚定美股时空时态 (支持真实时间与模拟时间注入)
     const marketSession = marketCalendarService.getMarketSession(simulatedTime, marketPhaseOverride);
 
-    // STEP 2: Phase 1 动态拉取 OpenD 11 大行业板块资金流，并执行 SearXNG 权威信源分级搜刮 (MACRO_SEARCH)
-    notifyStage(2, "MACRO_SEARCH", "MooMoo OpenD 11大行业板块与资金流", `[${marketSession.phaseLabel}] 正在拉取 11 大行业 ETF 实时行情与资金流...`, 30);
-    const openDSectorsData = await moomooAdapter.fetchMacroSectorsFromOpenD();
+    // STEP 2: 统一数据网关拉取 11 大行业板块资金流与行情，并执行 SearXNG 权威信源分级搜刮 (MACRO_SEARCH)
+    notifyStage(2, "MACRO_SEARCH", "统一网关 11大行业板块与资金流", `[${marketSession.phaseLabel}] 正在通过统一数据网关拉取 11 大行业 ETF 实时行情与资金流...`, 30);
+    const openDSectorsData = await marketDataGateway.fetchMacroSectors();
 
     // 实时流式注入已就绪的板块数据
     this.liveStageData = {
@@ -430,7 +416,7 @@ export class DailyStrategyDirector {
     };
 
     // STEP 3: 候选池构建与标的多维消歧深度挖掘 (CANDIDATE_AND_SEARCH)
-    notifyStage(3, "CANDIDATE_AND_SEARCH", "候选池构建与标的多维挖掘", "正在直连 OpenD 官方接口拉取全美股行情、52周高低点与资金流...", 50);
+    notifyStage(3, "CANDIDATE_AND_SEARCH", "候选池构建与标的多维挖掘", "正在通过统一数据网关拉取全美股行情、52周高低点与资金流...", 50);
     const holdingSymbols = portfolio.positions.map((p) => p.symbol.toUpperCase());
     const watchlistSymbols = watchlistItems.map((w) => w.symbol.toUpperCase());
 
@@ -464,17 +450,28 @@ export class DailyStrategyDirector {
     const scanUniverseList = [...p1P2List, ...p3ListToScan];
     const scanUniverseSymbols = scanUniverseList.map((u) => u.symbol);
 
-    // 2. 直连 MooMoo OpenD 官方通道拉取快照 (52周高低点、PE、PB、EPS、换手率) 与 资金流
-    const snapshotsList = await moomooAdapter.fetchMarketSnapshotsFromOpenD(scanUniverseSymbols);
+    // 2. 统一市场数据网关批量拉取行情 (自动多源降级容灾、附带 Badge 溯源与时效校验)
+    const unifiedQuotesMap = await marketDataGateway.fetchQuotes(scanUniverseSymbols);
     const snapshotsMap = new Map<string, OpenDSnapshotItem>();
-    snapshotsList.forEach((s) => snapshotsMap.set(s.symbol.toUpperCase(), s));
-
-    const openDFlows = await moomooAdapter.fetchCapitalFlowsFromOpenD(scanUniverseSymbols.slice(0, 30));
-
     const quotesMap = new Map<string, number>();
-    snapshotsList.forEach((s) => {
-      if (s.lastPrice > 0) quotesMap.set(s.symbol.toUpperCase(), s.lastPrice);
+
+    unifiedQuotesMap.forEach((uq, sym) => {
+      if (uq.price > 0) quotesMap.set(sym, uq.price);
+      snapshotsMap.set(sym, {
+        symbol: sym,
+        name: uq.name,
+        lastPrice: uq.price,
+        prevClosePrice: uq.prevClose,
+        peRatio: uq.peRatio,
+        openPrice: uq.openPrice,
+        highPrice: uq.highPrice,
+        lowPrice: uq.lowPrice,
+        volume: uq.volume,
+        turnoverRate: uq.turnoverRate,
+      });
     });
+
+    const openDFlows = await marketDataGateway.fetchCapitalFlows(scanUniverseSymbols.slice(0, 30));
 
     const budgetToUse = customBudget !== undefined ? customBudget : portfolio.totalBudget;
     const currentPositions: StockPositionItem[] = portfolio.positions.map((p) => ({
@@ -529,7 +526,7 @@ export class DailyStrategyDirector {
       }
     }
 
-    console.log(`[OpenD Direct] Dynamic Universe: ${allUniverseList.length} symbols (Scanned: ${scanUniverseSymbols.length}), Snapshots: ${snapshotsList.length}, Classified: ${classifiedCandidateList.length}`);
+    console.log(`[MarketDataGateway] Dynamic Universe: ${allUniverseList.length} symbols (Scanned: ${scanUniverseSymbols.length}), Snapshots: ${snapshotsMap.size}, Classified: ${classifiedCandidateList.length}`);
 
     // 优先级严格保证：P1 实盘持仓全部纳入，P2 自选股全部纳入，P3 全美股雷达精选前 10 只优质机会
     const p1List = classifiedCandidateList.filter((c) => c.priority === 1);
@@ -557,7 +554,7 @@ export class DailyStrategyDirector {
 
     // 并发批量拉取入选标的的 Google TimeFM 零样本时序动量预测 (UP / DOWN / SIDEWAYS)
     notifyStage(3, "CANDIDATE_AND_SEARCH", "候选池构建与标的多维挖掘", "正在调用 Google TimeFM 时序大模型计算全标的次日走势方向与置信带...", 65);
-    const timefmForecastsMap = await moomooAdapter.fetchTimeFmForecastsFromOpenD(candidateSymbols);
+    const timefmForecastsMap = await marketDataGateway.fetchTimeFmForecasts(candidateSymbols);
 
     // 读取前期策略核验对齐
     const prevStrategy = await prisma.dailyStrategy.findFirst({
@@ -644,16 +641,16 @@ export class DailyStrategyDirector {
 
       const evidence5Pillars: any = {
         news: credibleNewsItems,
-        fundamentals: fundamentals ? {
-          peRatio: fundamentals.peRatio ?? cand.snapshot?.peRatio,
+        fundamentals: (fundamentals || cand.snapshot?.peRatio || cand.snapshot?.pbRatio) ? {
+          peRatio: fundamentals?.peRatio ?? cand.snapshot?.peRatio,
           pbRatio: cand.snapshot?.pbRatio,
-          revenueGrowthPct: fundamentals.revenueGrowthPct,
-          netMarginPct: fundamentals.netMarginPct,
-          debtToEquity: fundamentals.debtToEquity,
-          nextEarningsDate: fundamentals.nextEarningsDate,
-          valuationScore: cand.snapshot?.peRatio ? Math.max(15, Math.min(95, Math.round(100 - cand.snapshot.peRatio * 1.5))) : 65,
-          valuationStatus: cand.snapshot?.peRatio && cand.snapshot.peRatio < 25 ? "合理偏低估" : "成长溢价",
-          summary: fundamentals.fundamentalSummary,
+          revenueGrowthPct: fundamentals?.revenueGrowthPct,
+          netMarginPct: fundamentals?.netMarginPct,
+          debtToEquity: fundamentals?.debtToEquity,
+          nextEarningsDate: fundamentals?.nextEarningsDate,
+          valuationScore: (fundamentals?.peRatio ?? cand.snapshot?.peRatio) ? Math.max(15, Math.min(95, Math.round(100 - (fundamentals?.peRatio ?? cand.snapshot?.peRatio!) * 1.5))) : 65,
+          valuationStatus: (fundamentals?.peRatio ?? cand.snapshot?.peRatio) && (fundamentals?.peRatio ?? cand.snapshot?.peRatio!) < 25 ? "合理偏低估" : "成长溢价",
+          summary: fundamentals?.fundamentalSummary || (cand.snapshot?.peRatio ? `市盈率 P/E: ${cand.snapshot.peRatio} · 市净率 P/B: ${cand.snapshot.pbRatio || "--"}` : undefined),
         } : undefined,
         liveMarket: {
           curPrice: currentPrice,
@@ -763,8 +760,41 @@ export class DailyStrategyDirector {
       const sym = cand.symbol.toUpperCase();
       const intel = candidateStockIntels.get(cand.symbol);
       const kg = knowledgeGraphList.find((k) => k.symbol.toUpperCase() === sym);
-      const curPrice = quotesMap.get(sym) || cand.snapshot?.lastPrice || cand.snapshot?.prevClosePrice || 0;
-      const fundamentals = await stockKnowledgeGraphStoreService.getFundamentals(sym);
+      let curPrice = quotesMap.get(sym) || cand.snapshot?.lastPrice || cand.snapshot?.prevClosePrice || 0;
+      let fundamentals = await stockKnowledgeGraphStoreService.getFundamentals(sym);
+
+      // 🌟 统一数据网关兜底：若行情或基本面缺失，自动从 MarketDataGateway 补齐
+      if (curPrice <= 0 || !cand.snapshot?.lastPrice) {
+        try {
+          const uq = await marketDataGateway.fetchQuote(sym);
+          if (uq && uq.price > 0) {
+            curPrice = uq.price;
+            if (!cand.snapshot) {
+              cand.snapshot = {
+                symbol: sym,
+                name: uq.name,
+                lastPrice: uq.price,
+                prevClosePrice: uq.prevClose,
+                peRatio: uq.peRatio,
+              };
+            } else {
+              cand.snapshot.lastPrice = uq.price;
+              cand.snapshot.prevClosePrice = uq.prevClose || uq.price;
+              if (!cand.snapshot.peRatio && uq.peRatio) cand.snapshot.peRatio = uq.peRatio;
+            }
+            quotesMap.set(sym, curPrice);
+          }
+        } catch (e) {}
+      }
+
+      if (!fundamentals) {
+        try {
+          fundamentals = await marketDataGateway.fetchFundamentals(sym);
+          if (fundamentals) {
+            await stockKnowledgeGraphStoreService.upsertFundamentals(fundamentals);
+          }
+        } catch (e) {}
+      }
 
       const report = dataSufficiencyGatekeeper.evaluateSymbol({
         symbol: sym,
@@ -840,13 +870,19 @@ export class DailyStrategyDirector {
 
     let deductionPipeline: DeductionPipelineData = {
       modelUsed: "Ollama Multi-Agent Game",
+      totalDurationMs: 0,
+      totalTokensEstimated: 0,
+      traces: [],
+      macroSummaryPrompt: "",
+      macroRawResponse: "",
       promptContextText: "",
       knowledgeGraphContext: "",
       searxngNewsContext: macroRes.rawNewsText,
-      positionsContext: JSON.stringify(currentPositions),
-      lessonsContext: JSON.stringify(retroPnL.lessonsLearned),
+      positionsContext: JSON.stringify(currentPositions, null, 2),
+      lessonsContext: JSON.stringify(retroPnL.lessonsLearned, null, 2),
       rawOllamaOutput: "",
     };
+    this.liveDeductionPipeline = deductionPipeline;
 
     // 仅针对数据完备的标的执行大模型推理
     if (ollamaCheck.connected && ollamaCheck.models.length > 0 && validCandidateSymbols.length > 0) {
@@ -867,6 +903,24 @@ export class DailyStrategyDirector {
           riskPreference: portfolio.riskPreference,
           timefmForecasts: timefmForecastsMap,
           stockVerifiedHistories: stockVerifiedHistoriesMap,
+          onTraceGenerated: (trace) => {
+            if (this.liveDeductionPipeline) {
+              this.liveDeductionPipeline.traces = [
+                ...this.liveDeductionPipeline.traces.filter((t) => t.id !== trace.id),
+                trace,
+              ];
+              this.liveDeductionPipeline.totalDurationMs += trace.durationMs;
+              const count = this.liveDeductionPipeline.traces.length;
+              const total = validCandidateSymbols.length + 1;
+              notifyStage(
+                4,
+                "OLLAMA_DEDUCTION",
+                "大模型多主体博弈推演",
+                `[${trace.symbol || "宏观大盘"}] 推理完成 (${trace.durationMs}ms) · 进度 ${count}/${total}`,
+                Math.min(95, 80 + Math.round((count / total) * 15))
+              );
+            }
+          },
         });
 
         screenerRes = {
@@ -878,6 +932,11 @@ export class DailyStrategyDirector {
 
         deductionPipeline = {
           modelUsed: ollamaRes.modelUsed,
+          totalDurationMs: ollamaRes.totalDurationMs,
+          totalTokensEstimated: ollamaRes.totalTokensEstimated,
+          traces: ollamaRes.traces,
+          macroSummaryPrompt: ollamaRes.traces.find((t) => t.agentRole === "MACRO_ANALYST")?.userPrompt || "",
+          macroRawResponse: ollamaRes.traces.find((t) => t.agentRole === "MACRO_ANALYST")?.rawResponseText || "",
           promptContextText: ollamaRes.promptText,
           knowledgeGraphContext: ollamaRes.knowledgeGraphContext,
           searxngNewsContext: ollamaRes.searxngNewsContext,

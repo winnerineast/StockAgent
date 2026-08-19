@@ -136,6 +136,10 @@ interface DeductionRetroStudioTabProps {
   selectedOllamaModel?: string;
   onRefreshStatus?: () => void;
   onStartDeduction?: () => void;
+  liveDeductionPipeline?: any;
+  onOpenDeductionModal?: (symbol?: string) => void;
+  prudexCompass?: any;
+  dualLevelMemory?: any;
   marketSession?: {
     easternTimeStr: string;
     localTimeStr: string;
@@ -230,6 +234,10 @@ export const DeductionRetroStudioTab: React.FC<DeductionRetroStudioTabProps> = (
   selectedOllamaModel = "",
   onRefreshStatus,
   onStartDeduction,
+  liveDeductionPipeline,
+  onOpenDeductionModal,
+  prudexCompass,
+  dualLevelMemory,
   marketSession,
 }) => {
   const [customBudget, setCustomBudget] = useState<number>(1000);
@@ -262,6 +270,25 @@ export const DeductionRetroStudioTab: React.FC<DeductionRetroStudioTabProps> = (
     if (currentStep > targetStep) return "DONE";
     return "PENDING";
   };
+
+  // 🌟 计算当前已完成大模型推理的标的 Set
+  const completedSymbols = useMemo(() => {
+    if (!liveDeductionPipeline || !Array.isArray(liveDeductionPipeline.traces)) {
+      return new Set<string>();
+    }
+    return new Set<string>(
+      liveDeductionPipeline.traces
+        .map((t: any) => t.symbol?.toUpperCase())
+        .filter(Boolean)
+    );
+  }, [liveDeductionPipeline]);
+
+  // 从当前阶段日志中提取正在计算的标的代码
+  const activeComputingSymbol = useMemo(() => {
+    if (!currentStage || currentStage.step !== 4) return undefined;
+    const match = currentStage.detail?.match(/\[([A-Z0-9.\-_]+)\]/);
+    return match ? match[1] : undefined;
+  }, [currentStage]);
 
   // 1. 判定标的是否为当前实盘持有 (持股 > 0)
   const isHolding = (item: any) => {
@@ -474,6 +501,8 @@ export const DeductionRetroStudioTab: React.FC<DeductionRetroStudioTabProps> = (
       <DeductionProgressStepper
         currentStage={currentStage}
         loading={loading}
+        liveDeductionPipeline={liveDeductionPipeline}
+        onOpenDeductionModal={onOpenDeductionModal}
       />
 
       {/* 🌟 美股交易时态与大模型使命战略横幅 */}
@@ -552,6 +581,8 @@ export const DeductionRetroStudioTab: React.FC<DeductionRetroStudioTabProps> = (
           retrospectives={retrospectives}
           loading={loading}
           onTriggerRetro={onStartDeduction || (() => {})}
+          prudexCompass={prudexCompass}
+          dualLevelMemory={dualLevelMemory}
         />
       ) : (
         <>
@@ -1057,37 +1088,54 @@ export const DeductionRetroStudioTab: React.FC<DeductionRetroStudioTabProps> = (
 
           {/* 4. 统一股票列表展示区 (全通栏自包含结构，实盘调仓决策与多维推演卡片深度融合) */}
           <div className="space-y-4">
-            {loading && (step3Status !== "DONE" || step4Status !== "DONE") ? (
-              /* 🌟 紧凑优雅的推演阶段进度卡片，避免出现大面积空黑留白 */
-              <div className="py-7 px-5 rounded-2xl bg-slate-950/90 backdrop-blur-md border border-cyan-500/30 flex flex-col items-center justify-center text-center shadow-2xl space-y-2.5 max-w-xl mx-auto my-2 animate-fade-in">
-                <div className="p-2.5 rounded-xl bg-cyan-500/20 border border-cyan-500/40 text-cyan-400 shadow-md shadow-cyan-500/20 animate-pulse">
-                  <Loader2 className="w-5 h-5 animate-spin" />
+            {/* 🌟 推演进行中的顶层流动进度横幅 (有多少数据显示多少数据，不再全局遮罩阻断) */}
+            {loading && (
+              <div className="p-3.5 rounded-2xl bg-slate-950/90 border border-cyan-500/30 flex items-center justify-between gap-3 text-xs shadow-xl animate-fade-in">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/40 animate-pulse">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-white">⚡ 标的推演流式进行中</span>
+                      <span className="px-2 py-0.2 rounded-full text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-mono">
+                        已就绪 {completedSymbols.size}/{perStockItems.length}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-300 mt-0.5 font-medium">
+                      {currentStage?.detail || "大模型多主体博弈逐一推演中，各标的卡片随计算完成实时解锁呈现..."}
+                    </p>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 uppercase tracking-wide">
-                    ⚡ Step {step3Status !== "DONE" ? 3 : 4} 正在实时执行
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-[11px] font-mono text-cyan-300 hidden sm:inline">
+                    {Math.round((completedSymbols.size / Math.max(1, perStockItems.length)) * 100)}%
                   </span>
-                  <span className="text-xs text-white font-bold">
-                    {step3Status !== "DONE" ? "候选池构建与标的多维消歧挖掘" : "Ollama 大模型融合推演与决策"}
-                  </span>
-                </div>
-                <p className="text-xs text-slate-300 max-w-md font-medium leading-relaxed">
-                  {currentStage?.detail || "正在聚合全要素候选池，深度执行图谱推理、多因子分类与定量调仓决策..."}
-                </p>
-                <div className="flex items-center gap-2 px-3 py-0.5 rounded-full bg-slate-900/90 border border-slate-800 text-[11px] text-cyan-400 font-mono">
-                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping"></span>
-                  <span>阶段实时处理中 · 稍候自动呈现推演卡片</span>
+                  <div className="w-20 bg-slate-900 h-2 rounded-full overflow-hidden border border-slate-800 hidden sm:block">
+                    <div
+                      className="bg-cyan-400 h-full transition-all duration-300"
+                      style={{ width: `${Math.round((completedSymbols.size / Math.max(1, perStockItems.length)) * 100)}%` }}
+                    />
+                  </div>
                 </div>
               </div>
-            ) : filteredItems.length > 0 ? (
-              filteredItems.map((item, idx) => (
-                <PerStockDeductionRetroCard
-                  key={idx}
-                  item={item}
-                  onOpenKnowledgeGraph={onOpenKnowledgeGraph}
-                  onOpenDeductionModal={(stockItem) => setSelectedStockForModal(stockItem)}
-                />
-              ))
+            )}
+
+            {filteredItems.length > 0 ? (
+              filteredItems.map((item, idx) => {
+                const isComputed = !loading || completedSymbols.has(item.symbol.toUpperCase());
+                return (
+                  <PerStockDeductionRetroCard
+                    key={item.symbol || idx}
+                    item={item}
+                    onOpenKnowledgeGraph={onOpenKnowledgeGraph}
+                    onOpenDeductionModal={(stockItem) => setSelectedStockForModal(stockItem)}
+                    isDeductionRunning={loading}
+                    isDeductionComputed={isComputed}
+                    activeComputingSymbol={activeComputingSymbol}
+                  />
+                );
+              })
             ) : (
               <div className="p-8 text-center text-slate-400 text-xs glass-card border-slate-800 space-y-1.5">
                 <div className="text-sm font-semibold text-slate-300">

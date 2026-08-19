@@ -225,11 +225,21 @@ model StockTradingMemoryStore {
   lastReinforcedDate String   // 最近强化/重组日期 YYYY-MM-DD
   isArchived         Boolean  @default(false) // 是否因长期未触发或权重大幅衰减移入冷归档
   evidenceLogsJson   String   @default("[]") // 支撑此原则的历史推演日志 ID 列表
+
+  // Holistic Context 半开时态有效区间与变更追溯 (Additive)
+  validStart         String?  // 生效日期 YYYY-MM-DD
+  validEnd           String?  // 失效日期 YYYY-MM-DD (null 表示当前持续活跃 +∞)
+  supersededById     String?  // 指向取代本原则的新原则 ID
+  supersedeReason    String?  // 变更/推翻的具体因果解释与证据摘要
+  evidenceWeightSum  Float?   @default(1.0) // 支撑此原则的累计证据加权分
+
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
   @@unique([portfolioId, symbol, category, title])
   @@index([portfolioId, symbol, isArchived])
+  @@index([validStart, validEnd])
 }
+
 
 

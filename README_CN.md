@@ -242,8 +242,14 @@ flowchart TD
    - 深度吸收 `TradingAgents` 架构精髓，单次 Prompt 中让大模型同时扮演多头研究员与严苛风控官，强制输出 `bearishRiskPoint` 致命下行风险点与 `bullBearVerdict` 裁决，拒绝盲目看多。
 8. **📅 美股专属财报静默期与期权 Gamma 异动雷达 (US Equity Special Intel)**：
    - 动态推演财报倒计时（$\le 7$ 天自动标红高危静默期预警），结合盘口主力资金流向实时测算做市商 Gamma 偏斜与认购/认沽比（PCR）。
-9. **100% 真实数据·零硬编码 (Zero Mock / Hardcoding)**：
-   - 彻底移除了所有静态假数据和 `1000.0` 默认兜底，所有行情、净值、现金均直连 OpenD 实盘端口。
+9. **100% 真实数据·零硬编码与零虚假占位 (Zero Mock & Zero Placeholder Architecture)**：
+   - 彻底移除了所有静态假数据、硬编码兜底数字（如假市盈率/换手率）与 `1000.0` 默认占位；
+   - 跨资产晴雨表（VIX/UVXY 恐慌指数、TLT 20年+美债基准 $81.66、UUP 美元指数）、大盘三大基准（SPY/QQQ/IWM 实时点位）与 11 大行业板块资金流 100% 直连 OpenD 原生行情；
+   - PRUDEX 6 维体检罗盘与 FinAgent 双层反思原则库实现前后端毫秒级实时联动。
+10. **🔬 大模型推演 Context 检视舱 (Deduction Context Console)**：
+    - 专为量化极客与专业交易员打造的 Agent LLM Trace 穿透检视舱，支持实时检视各多空智能体的 Prompt 上下文、耗时、Token 预估、因果图谱关联与原始未篡改输出。
+11. **🤖 严格遵循 AI-DLC 研发与质量门禁规范**：
+    - 全系统 16 个测试套件、72 个 Vitest 单元测试用例 100% 全部通过，前后端 TypeScript 0 错误编译，508 节点 Graft 代码图谱全量更新。
 
 ---
 

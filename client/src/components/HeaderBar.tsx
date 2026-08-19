@@ -12,7 +12,9 @@ import {
   Clock,
   Compass,
   Sparkles,
+  Database,
 } from "lucide-react";
+import { DataSourceBadge } from "./DataSourceBadge";
 
 export type TimeTravelSimulationMode =
   | "REALTIME"
@@ -245,17 +247,18 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
             )}
           </div>
 
-          {/* Visual Deduction Context Inspector Button */}
-          {hasDeductionData && (
-            <button
-              onClick={onOpenDeductionModal}
-              title="查看 Ollama 融合推演全量 Prompt Payload 与 JSON 输出"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 hover:bg-indigo-500/30 text-xs font-semibold transition-all hover:scale-105"
-            >
-              <Eye className="w-3.5 h-3.5 text-cyan-400" />
-              <span>推演 Context</span>
-            </button>
-          )}
+          {/* 多数据源 Color Code 图例 */}
+          <div className="hidden 2xl:flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-950/80 border border-slate-800 text-[10px]">
+            <span className="text-slate-500 font-bold flex items-center gap-1">
+              <Database className="w-3 h-3 text-cyan-400" />
+              源:
+            </span>
+            <DataSourceBadge source="MOOMOO_OPEND" customLabel="OpenD实盘" size="sm" />
+            <DataSourceBadge source="YAHOO_FINANCE" customLabel="Yahoo备用" size="sm" />
+            <DataSourceBadge source="SEARXNG_SEARCH" customLabel="SearXNG" size="sm" />
+            <DataSourceBadge source="SEC_EDGAR" customLabel="SEC" size="sm" />
+            <DataSourceBadge source="GOOGLE_TIMEFM" customLabel="TimeFM" size="sm" />
+          </div>
 
           {/* Unlock Trade Button (Dynamic status awareness) */}
           <button

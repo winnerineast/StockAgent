@@ -11,6 +11,7 @@ import {
   StockStrategyCategory,
   TimeFmForecastItem,
   MarketSessionContext,
+  AgentLLMTraceItem,
 } from "../types/stockTypes";
 import { graphQuantitativeEngine } from "./graphQuantitativeEngine";
 import { quantRiskManager } from "./quantRiskManager";
@@ -65,6 +66,9 @@ export interface OllamaDeductionResult {
   positionsContext: string;
   lessonsContext: string;
   modelUsed: string;
+  traces: AgentLLMTraceItem[];
+  totalDurationMs: number;
+  totalTokensEstimated: number;
 }
 
 export class OllamaService {
@@ -265,7 +269,8 @@ export class OllamaService {
   public async generateMacroSummaryWithOllama(
     modelName: string,
     searxngNewsText: string
-  ): Promise<string> {
+  ): Promise<{ summary: string; trace: AgentLLMTraceItem }> {
+    const startTime = Date.now();
     const prompt = `你是一名华尔街顶级宏观策略首席分析师与美股基金经理。
 请基于以下最新实时宏观新闻与资讯，提炼一段精炼、富有洞察力的美股盘前宏观走势综述 (约 150-250 字)。
 说明当前市场主线、流动性预期、主要风险偏好及对仓位防守/进攻的指引。
@@ -275,6 +280,12 @@ ${searxngNewsText || "暂无最新全球宏观突发新闻"}
 
 请直接输出综述正文，不要包含多余问候或 markdown 标题：`;
 
+    const systemPrompt = "你是一名华尔街顶级宏观策略首席分析师。请直接输出综述正文，无需多余思考。";
+    let summary = "";
+    let rawResponse = "";
+    let thinkingText = "";
+    let status: "SUCCESS" | "TIMEOUT_FALLBACK" | "ERROR_FALLBACK" = "SUCCESS";
+
     try {
       const resp = await fetch(`${this.baseUrl}/api/chat`, {
         method: "POST",
@@ -282,23 +293,62 @@ ${searxngNewsText || "暂无最新全球宏观突发新闻"}
         signal: AbortSignal.timeout(60000),
         body: JSON.stringify({
           model: modelName,
-          messages: [{ role: "user", content: prompt }],
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: prompt }
+          ],
           stream: false,
+          options: {
+            temperature: 0.2,
+            num_predict: 1200,
+          },
         }),
       });
 
       if (resp.ok) {
         const resData: any = await resp.json();
-        const output = resData?.message?.content?.trim();
-        if (output) return output;
+        const content = resData?.message?.content || "";
+        thinkingText = resData?.message?.thinking || "";
+        rawResponse = content || (thinkingText ? `[宏观首席思考]:\n${thinkingText}` : "");
+        const output = content.trim();
+        if (output) {
+          summary = output;
+          status = "SUCCESS";
+        } else {
+          status = "ERROR_FALLBACK";
+        }
+      } else {
+        status = "ERROR_FALLBACK";
       }
-    } catch (e) {
+    } catch (e: any) {
       console.warn(`[Ollama Macro Summary] Inference timeout or error: ${e}`);
+      status = "TIMEOUT_FALLBACK";
     }
 
-    return searxngNewsText
-      ? searxngNewsText.slice(0, 180)
-      : "美股盘前大盘走势分化，建议重点关注基本面与催化消息，控制回撤。";
+    if (!summary) {
+      summary = searxngNewsText
+        ? searxngNewsText.slice(0, 180)
+        : "美股盘前大盘走势分化，建议重点关注基本面与催化消息，控制回撤。";
+    }
+
+    const durationMs = Date.now() - startTime;
+    const trace: AgentLLMTraceItem = {
+      id: `trace-macro-${Date.now()}`,
+      agentRole: "MACRO_ANALYST",
+      agentLabel: "🌐 宏观大盘首席策略分析师",
+      modelName,
+      systemPrompt,
+      userPrompt: prompt,
+      thinkingText: thinkingText || undefined,
+      rawResponseText: rawResponse || summary,
+      parsedOutput: { summary },
+      searxngNewsSnippets: searxngNewsText ? searxngNewsText.split("\n").slice(0, 8) : [],
+      durationMs,
+      status,
+      timestamp: new Date().toISOString(),
+    };
+
+    return { summary, trace };
   }
 
   public async deduceSingleStockWithOllama(
@@ -324,7 +374,8 @@ ${searxngNewsText || "暂无最新全球宏观突发新闻"}
       userBudget?: number;
       marketSession?: MarketSessionContext;
     }
-  ): Promise<ActionItem | null> {
+  ): Promise<{ action: ActionItem | null; trace: AgentLLMTraceItem }> {
+    const startTime = Date.now();
     const s = stockData.symbol;
     const cName = stockData.companyName || s;
     const curP = stockData.currentPrice;
@@ -428,31 +479,52 @@ ${verifiedMemories}
   "urgency": "HIGH" | "MEDIUM" | "LOW"
 }`;
 
+    const systemPrompt = `你是一个专业的高频多智能体量化对冲与投研推演系统。请直接输出严格合规的 JSON 对象，包含多空对抗博弈结论、挂单区间与消除迷茫度核心逻辑，无需长篇思考。`;
+    let rawResponse = "";
+    let thinkingText = "";
+    let status: "SUCCESS" | "TIMEOUT_FALLBACK" | "ERROR_FALLBACK" = "SUCCESS";
+    let alignedAction: ActionItem | null = null;
+    let jsonParsed: any = null;
+
     try {
       const resp = await fetch(`${this.baseUrl}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        signal: AbortSignal.timeout(60000),
+        signal: AbortSignal.timeout(45000),
         body: JSON.stringify({
           model: modelName,
-          messages: [{ role: "user", content: prompt }],
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: prompt }
+          ],
           stream: false,
           format: "json",
+          options: {
+            temperature: 0.2,
+            num_predict: 1600,
+          },
         }),
       });
 
       if (resp.ok) {
         const resData: any = await resp.json();
-        const contentText = resData?.message?.content || "";
-        let jsonParsed: any = null;
+        const content = resData?.message?.content || "";
+        thinkingText = resData?.message?.thinking || "";
+        rawResponse = content || (thinkingText ? `[模型思考过程]:\n${thinkingText}` : "");
+
         try {
-          jsonParsed = JSON.parse(contentText);
+          jsonParsed = JSON.parse(content);
         } catch {
-          const match = contentText.match(/\{[\s\S]*\}/);
-          if (match) jsonParsed = JSON.parse(match[0]);
+          const match = content.match(/\{[\s\S]*\}/);
+          if (match) {
+            try {
+              jsonParsed = JSON.parse(match[0]);
+            } catch {}
+          }
         }
 
         if (jsonParsed && (jsonParsed.action || jsonParsed.actionType) && jsonParsed.symbol) {
+          status = "SUCCESS";
           const inferActionType: StockActionVerdict = jsonParsed.actionType || (
             jsonParsed.action === "BUY"
               ? (pos && pos.shares > 0 ? "ADD_POSITION" : "OPEN_POSITION")
@@ -489,7 +561,7 @@ ${verifiedMemories}
             },
           };
 
-          return quantRiskManager.alignActionWithQuantRisk(
+          alignedAction = quantRiskManager.alignActionWithQuantRisk(
             rawAction,
             curP,
             spilloverAlpha,
@@ -500,13 +572,39 @@ ${verifiedMemories}
             targetT,
             maxD
           );
+        } else {
+          status = "ERROR_FALLBACK";
         }
+      } else {
+        status = "ERROR_FALLBACK";
       }
     } catch (e) {
       console.warn(`[Ollama Deduce Stock] Error for ${s}: ${e}`);
+      status = "TIMEOUT_FALLBACK";
     }
 
-    return null;
+    const durationMs = Date.now() - startTime;
+    const trace: AgentLLMTraceItem = {
+      id: `trace-${s}-${Date.now()}`,
+      agentRole: "STOCK_BULL_BEAR_DEBATER",
+      agentLabel: `⚔️ [${s}] 多空对抗博弈辩手`,
+      symbol: s,
+      companyName: cName,
+      modelName,
+      systemPrompt,
+      userPrompt: prompt,
+      thinkingText: thinkingText || undefined,
+      rawResponseText: rawResponse || (alignedAction ? JSON.stringify(alignedAction, null, 2) : "无模型返回内容"),
+      parsedOutput: jsonParsed || alignedAction,
+      knowledgeGraphTriplets: kg ? graphQuantitativeEngine.formatTripletsForPrompt(kg).split("\n") : undefined,
+      searxngNewsSnippets: news,
+      fundamentalsSnippet: fundText,
+      durationMs,
+      status,
+      timestamp: new Date().toISOString(),
+    };
+
+    return { action: alignedAction, trace };
   }
 
   public async generateStrategyWithOllama(
@@ -529,8 +627,10 @@ ${verifiedMemories}
       targetProfitGoalPct?: number;
       targetTimeHorizonDays?: number;
       maxDrawdownPct?: number;
+      onTraceGenerated?: (trace: AgentLLMTraceItem) => void;
     }
   ): Promise<OllamaDeductionResult> {
+    const overallStartTime = Date.now();
     const status = await this.getStatus();
     if (!status.connected || status.models.length === 0) {
       throw new Error("Ollama 服务未连接");
@@ -540,9 +640,14 @@ ${verifiedMemories}
     const targetT = context.targetTimeHorizonDays || 5;
     const targetG = context.targetProfitGoalPct || 8.0;
     const maxD = context.maxDrawdownPct || 4.0;
+    const traces: AgentLLMTraceItem[] = [];
 
     // Stage A: 宏观 Chunk 推理
-    const macroOverview = await this.generateMacroSummaryWithOllama(selectedModel, context.searxngNewsText);
+    const macroRes = await this.generateMacroSummaryWithOllama(selectedModel, context.searxngNewsText);
+    traces.push(macroRes.trace);
+    if (context.onTraceGenerated) {
+      context.onTraceGenerated(macroRes.trace);
+    }
 
     // Stage B: 候选股票 Map Chunk 分批并发推理 (并发池限流 2，防止显存与队列超时)
     const deduceOneSymbol = async (sym: string): Promise<ActionItem> => {
@@ -586,8 +691,13 @@ ${verifiedMemories}
         userBudget: context.totalBudget,
       });
 
-      if (itemRes) {
-        return itemRes;
+      traces.push(itemRes.trace);
+      if (context.onTraceGenerated) {
+        context.onTraceGenerated(itemRes.trace);
+      }
+
+      if (itemRes.action) {
+        return itemRes.action;
       }
 
       // Fallback
@@ -655,11 +765,10 @@ ${verifiedMemories}
     };
 
     const actions: ActionItem[] = [];
-    const poolConcurrency = 2;
-    for (let i = 0; i < context.candidateSymbols.length; i += poolConcurrency) {
-      const chunk = context.candidateSymbols.slice(i, i + poolConcurrency);
-      const chunkResults = await Promise.all(chunk.map((sym) => deduceOneSymbol(sym)));
-      actions.push(...chunkResults);
+    // 🌟 本地 Ollama 严格单任务串行队列执行 (Concurrency = 1)，消除 GPU 显存争抢与 HTTP 排队超时
+    for (const sym of context.candidateSymbols) {
+      const act = await deduceOneSymbol(sym);
+      actions.push(act);
     }
 
     const riskAlerts: RiskAlert[] = [];
@@ -680,17 +789,25 @@ ${verifiedMemories}
       }
     });
 
+    const totalDurationMs = Date.now() - overallStartTime;
+    // 粗略预估 token 数 (1 token ≈ 4 字符)
+    const totalPromptChars = traces.reduce((acc, t) => acc + (t.userPrompt?.length || 0) + (t.rawResponseText?.length || 0), 0);
+    const totalTokensEstimated = Math.round(totalPromptChars / 4);
+
     return {
       actions,
       riskAlerts,
-      marketOverview: macroOverview,
-      promptText: `[Map-Reduce Chunked Pipeline Execute on ${selectedModel}]`,
-      rawOllamaResponse: JSON.stringify({ macroOverview, actionsCount: actions.length }),
+      marketOverview: macroRes.summary,
+      promptText: macroRes.trace.userPrompt,
+      rawOllamaResponse: macroRes.trace.rawResponseText,
       knowledgeGraphContext: `${context.knowledgeGraphs.length} 标的知识图谱数据组装完毕`,
       searxngNewsContext: context.searxngNewsText,
-      positionsContext: `${context.positions.length} 笔持仓明细`,
-      lessonsContext: `${context.lessonsLearned.length} 条纪律与教训`,
+      positionsContext: JSON.stringify(context.positions, null, 2),
+      lessonsContext: JSON.stringify(context.lessonsLearned, null, 2),
       modelUsed: selectedModel,
+      traces,
+      totalDurationMs,
+      totalTokensEstimated,
     };
   }
 }

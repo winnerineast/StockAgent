@@ -25,6 +25,7 @@ import {
   Check,
 } from "lucide-react";
 import { formatOrderSlipText } from "../utils/orderSlipFormatter";
+import { DataSourceBadge } from "./DataSourceBadge";
 
 export interface TimeFmForecastItem {
   direction: "UP" | "DOWN" | "SIDEWAYS";
@@ -118,6 +119,8 @@ interface PerStockDeductionRetroCardProps {
     communitySentiment?: CommunitySentimentItem;
     capitalFlow?: CapitalFlowItem;
     fundamentals?: StockFundamentals;
+    openDSnapshot?: any;
+    evidence5Pillars?: any;
     position?: {
       shares: number;
       costBasis: number;
@@ -199,12 +202,18 @@ interface PerStockDeductionRetroCardProps {
   };
   onOpenKnowledgeGraph: (symbol: string) => void;
   onOpenDeductionModal?: (item: any) => void;
+  isDeductionRunning?: boolean;
+  isDeductionComputed?: boolean;
+  activeComputingSymbol?: string;
 }
 
 export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProps> = ({
   item,
   onOpenKnowledgeGraph,
   onOpenDeductionModal,
+  isDeductionRunning = false,
+  isDeductionComputed = true,
+  activeComputingSymbol,
 }) => {
   const [expanded, setExpanded] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
@@ -215,7 +224,7 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
   const past = item.pastRetro;
   const sentiment = item.communitySentiment;
   const flow = item.capitalFlow;
-  const fund = item.fundamentals;
+  const fund = item.fundamentals || (item as any).evidence5Pillars?.fundamentals || ((item as any).openDSnapshot ? { peRatio: (item as any).openDSnapshot.peRatio, pbRatio: (item as any).openDSnapshot.pbRatio } : undefined);
   const isBuy = rec?.action === "BUY";
   const isTrim = rec?.action === "TRIM" || rec?.action === "SELL";
 
@@ -300,6 +309,7 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
 
             {pos && pos.shares > 0 ? (
               <div className="flex flex-wrap items-center gap-2.5 text-xs text-slate-300 mt-1.5">
+                <DataSourceBadge source="MOOMOO_OPEND" customLabel="OpenD 实盘持仓" />
                 <div className="flex items-center gap-1 bg-slate-950 px-2.5 py-1 rounded-lg border border-slate-800">
                   <span className="text-slate-400">持仓:</span>
                   <strong className="text-white">{pos.shares} 股</strong>
@@ -331,7 +341,11 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
               </div>
             ) : (
               <div className="text-xs text-slate-400 flex items-center gap-2 mt-1">
-                <span>现价: ${pos ? pos.marketPrice.toFixed(2) : (rec?.estimatedPrice || 0).toFixed(2)}</span>
+                <DataSourceBadge
+                  source={item.openDSnapshot?.lastPrice ? "MOOMOO_OPEND" : "YAHOO_FINANCE"}
+                  customLabel={item.openDSnapshot?.lastPrice ? "OpenD 实时行情" : "Yahoo 备用报价"}
+                />
+                <span>现价: ${(item.openDSnapshot?.lastPrice || rec?.estimatedPrice || (pos ? pos.marketPrice : 0)).toFixed(2)}</span>
                 <span className="text-slate-500 italic">(暂未建立实盘持仓)</span>
               </div>
             )}
@@ -367,7 +381,12 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
         </div>
 
         <div className="flex flex-wrap items-center gap-2 shrink-0">
-          {(() => {
+          {isDeductionRunning && !isDeductionComputed ? (
+            <div className="px-3 py-1 rounded-xl text-xs font-bold flex items-center gap-1.5 border shadow-sm bg-cyan-500/10 text-cyan-300 border-cyan-500/30 animate-pulse">
+              <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+              <span>{activeComputingSymbol?.toUpperCase() === item.symbol.toUpperCase() ? "⚡ 模型推理中..." : "⏳ 排队推演中"}</span>
+            </div>
+          ) : (() => {
             const actType = (rec as any)?.actionType || (isBuy ? (pos && pos.shares > 0 ? "ADD_POSITION" : "OPEN_POSITION") : isTrim ? (rec?.action === "SELL" ? "CLOSE_POSITION" : "TRIM_POSITION") : "HOLD_AND_WATCH");
             const labelMap: Record<string, { label: string; badge: string }> = {
               OPEN_POSITION: { label: `🟢 建议建仓 (${rec?.suggestedShares || 0}股)`, badge: "bg-emerald-500/20 text-emerald-300 border-emerald-500/40" },
@@ -429,8 +448,30 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
         </div>
       </div>
 
-      {/* SubTab Header */}
-      <div className="px-4 py-2 bg-slate-950/60 border-b border-slate-800 flex items-center justify-between">
+      {/* Card Body: Dynamic Computing Mask or Full Content */}
+      {isDeductionRunning && !isDeductionComputed ? (
+        <div className="p-6 bg-slate-950/70 backdrop-blur-md flex flex-col items-center justify-center text-center space-y-3 relative overflow-hidden border-t border-slate-800 animate-fade-in">
+          <div className="p-2.5 rounded-xl bg-cyan-500/15 border border-cyan-500/40 text-cyan-300 shadow-lg shadow-cyan-500/10 animate-pulse">
+            <Zap className="w-5 h-5 text-cyan-400" />
+          </div>
+          <div className="space-y-1">
+            <div className="flex items-center justify-center gap-2">
+              <span className="px-3 py-1 rounded-full text-xs font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
+                {activeComputingSymbol?.toUpperCase() === item.symbol.toUpperCase() ? "⚡ 大模型多主体博弈实时推理中..." : "⏳ 队列排队等待模型推演..."}
+              </span>
+            </div>
+            <p className="text-xs text-slate-300 font-medium max-w-md pt-1 leading-relaxed">
+              正在结合美东时态、资金硬约束、产业链拓扑三元组与全网资讯，测算【{item.symbol}】多空博弈结论与挂单区间...
+            </p>
+            <p className="text-[11px] text-slate-500 font-mono">
+              推理完成后将立即自动解锁并呈现最终挂单小抄与 7 维推演研报
+            </p>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* SubTab Header */}
+          <div className="px-4 py-2 bg-slate-950/60 border-b border-slate-800 flex items-center justify-between">
         <div className="flex items-center gap-1.5 overflow-x-auto text-xs py-1">
           <button
             onClick={() => setSubTab("retro")}
@@ -556,8 +597,11 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
                 <div className="p-1.5 rounded-md bg-emerald-500/10 text-emerald-400 shrink-0 mt-0.5 font-bold text-xs">
                   📊
                 </div>
-                <div className="space-y-0.5 min-w-0">
-                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">1. 基本面与估值锚点</div>
+                <div className="space-y-1 min-w-0 flex-1">
+                  <div className="flex items-center justify-between">
+                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">1. 基本面与估值锚点</div>
+                    <DataSourceBadge source="YAHOO_FINANCE" customLabel="Yahoo/SEC" />
+                  </div>
                   <div className="text-slate-200 text-xs font-medium leading-snug line-clamp-2" title={item.evidenceHighlights?.fundamentalAnchor || rec?.evidenceHighlights?.fundamentalAnchor}>
                     {item.evidenceHighlights?.fundamentalAnchor || rec?.evidenceHighlights?.fundamentalAnchor || "基本面与估值中枢处于健康区间"}
                   </div>
@@ -569,8 +613,11 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
                 <div className="p-1.5 rounded-md bg-indigo-500/10 text-indigo-400 shrink-0 mt-0.5 font-bold text-xs">
                   📰
                 </div>
-                <div className="space-y-0.5 min-w-0">
-                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">2. 权威消息与行业催化</div>
+                <div className="space-y-1 min-w-0 flex-1">
+                  <div className="flex items-center justify-between">
+                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">2. 权威消息与行业催化</div>
+                    <DataSourceBadge source="SEARXNG_SEARCH" customLabel="SearXNG 聚合" />
+                  </div>
                   <div className="text-slate-200 text-xs font-medium leading-snug line-clamp-2" title={item.evidenceHighlights?.catalystAnchor || rec?.evidenceHighlights?.catalystAnchor}>
                     {item.evidenceHighlights?.catalystAnchor || rec?.evidenceHighlights?.catalystAnchor || item.strategyCategoryReason || "行业景气度向好，近期无突发重大利空"}
                   </div>
@@ -582,8 +629,11 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
                 <div className="p-1.5 rounded-md bg-amber-500/10 text-amber-400 shrink-0 mt-0.5 font-bold text-xs">
                   🏦
                 </div>
-                <div className="space-y-0.5 min-w-0">
-                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">3. 资金流与 ATR 防线</div>
+                <div className="space-y-1 min-w-0 flex-1">
+                  <div className="flex items-center justify-between">
+                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">3. 资金流与 ATR 防线</div>
+                    <DataSourceBadge source="MOOMOO_OPEND" customLabel="OpenD 资金流" />
+                  </div>
                   <div className="text-slate-200 text-xs font-medium leading-snug line-clamp-2" title={item.evidenceHighlights?.flowRiskAnchor || rec?.evidenceHighlights?.flowRiskAnchor}>
                     {item.evidenceHighlights?.flowRiskAnchor || rec?.evidenceHighlights?.flowRiskAnchor || `主力资金动向平稳 · ATR软防线 $${rec?.stopLossPrice || "动态跟踪"}`}
                   </div>
@@ -1059,7 +1109,7 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
             </div>
           )}
 
-          {/* SubTab 7: 持仓 */}
+          {/* SubTab 7: 盘面与持仓 */}
           {subTab === "position" && (
             <div className="space-y-2">
               {pos && pos.shares > 0 ? (
@@ -1083,8 +1133,27 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
                     </span>
                   </div>
                 </div>
+              ) : (item as any).openDSnapshot ? (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 bg-slate-950 p-3 rounded-xl border border-slate-800">
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">52周最高</span>
+                    <span className="font-bold text-emerald-400">${(item as any).openDSnapshot.highest52WeeksPrice || "--"}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">52周最低</span>
+                    <span className="font-bold text-rose-400">${(item as any).openDSnapshot.lowest52WeeksPrice || "--"}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">今日开盘 / 昨收</span>
+                    <span className="font-bold text-white">${(item as any).openDSnapshot.openPrice || "--"} / ${(item as any).openDSnapshot.prevClosePrice || "--"}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">日换手率</span>
+                    <span className="font-bold text-cyan-300">{(item as any).openDSnapshot.turnoverRate ? `${(item as any).openDSnapshot.turnoverRate.toFixed(2)}%` : "--"}</span>
+                  </div>
+                </div>
               ) : (
-                <div className="text-slate-400 italic p-2">暂未建立实盘持仓</div>
+                <div className="text-slate-400 italic p-2">暂未建立实盘持仓，盘面快照读取中</div>
               )}
             </div>
           )}
@@ -1103,6 +1172,8 @@ export const PerStockDeductionRetroCard: React.FC<PerStockDeductionRetroCardProp
             </div>
           )}
         </div>
+      )}
+        </>
       )}
     </div>
   );

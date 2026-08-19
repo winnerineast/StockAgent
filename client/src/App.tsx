@@ -37,11 +37,14 @@ export default function App() {
   const [perStockItems, setPerStockItems] = useState<any[]>([]);
   const [retrospectives, setRetrospectives] = useState<any[]>([]);
   const [deductionPipeline, setDeductionPipeline] = useState<any>(null);
+  const [prudexCompass, setPrudexCompass] = useState<any>(null);
+  const [dualLevelMemory, setDualLevelMemory] = useState<any>(null);
 
   // Modals
   const [unlockModalOpen, setUnlockModalOpen] = useState<boolean>(false);
   const [barrierModalOpen, setBarrierModalOpen] = useState<boolean>(false);
   const [deductionModalOpen, setDeductionModalOpen] = useState<boolean>(false);
+  const [selectedDeductionSymbol, setSelectedDeductionSymbol] = useState<string | undefined>(undefined);
   const [selectedKgSymbol, setSelectedKgSymbol] = useState<string | null>(null);
   const [kgData, setKgData] = useState<any>(null);
   const userSelectedModelRef = useRef<boolean>(false);
@@ -285,11 +288,15 @@ export default function App() {
     });
 
     // 开启后台真实执行 Stage 与实时模型 Context 轮询 (300ms 间隔)
+    let isPollActive = true;
     let hasSyncedStep1 = false;
     const stagePollInterval = setInterval(async () => {
+      if (!isPollActive) return;
       try {
         const res = await fetch("/api/stock/strategy/stage");
+        if (!isPollActive) return;
         const json = await res.json();
+        if (!isPollActive) return;
         if (json.success && json.data) {
           if (json.data.stage) {
             setCurrentStage(json.data.stage);
@@ -345,10 +352,14 @@ export default function App() {
         setPerStockItems(json.data.output.perStockDeductionRetro || []);
         if (json.data.output.marketSession) setMarketSession(json.data.output.marketSession);
         if (json.data.deductionPipeline) setDeductionPipeline(json.data.deductionPipeline);
+        if (json.data.output.prudexCompass) setPrudexCompass(json.data.output.prudexCompass);
+        if (json.data.output.dualLevelMemory) setDualLevelMemory(json.data.output.dualLevelMemory);
         await fetchPortfolio();
         await fetchRetrospectives();
         await fetchStrategyHistory();
 
+        isPollActive = false;
+        clearInterval(stagePollInterval);
         setCurrentStage({
           step: 5,
           stageId: "FINISHED",
@@ -360,6 +371,7 @@ export default function App() {
     } catch (e) {
       console.warn("Failed to generate strategy:", e);
     } finally {
+      isPollActive = false;
       clearInterval(stagePollInterval);
       isGeneratingRef.current = false;
       setLoading(false);
@@ -498,7 +510,14 @@ export default function App() {
           selectedOllamaModel={selectedOllamaModel}
           onRefreshStatus={fetchStatus}
           onStartDeduction={() => handleGenerateStrategy()}
+          liveDeductionPipeline={deductionPipeline}
+          onOpenDeductionModal={(sym) => {
+            setSelectedDeductionSymbol(sym);
+            setDeductionModalOpen(true);
+          }}
           marketSession={marketSession}
+          prudexCompass={prudexCompass}
+          dualLevelMemory={dualLevelMemory}
         />
       </main>
 
@@ -521,6 +540,7 @@ export default function App() {
         onClose={() => setDeductionModalOpen(false)}
         pipelineData={deductionPipeline}
         strategyHistory={strategyHistory}
+        initialSelectedSymbol={selectedDeductionSymbol}
       />
 
       {/* 🚀 前置就绪屏障诊断与阻断弹窗 (Preflight Barrier Modal) */}

@@ -9,6 +9,9 @@ import { macroSnapshotStoreService } from "../services/macroSnapshotStore";
 import { marketCalendarService } from "../services/marketCalendarService";
 import { deductionVerificationService } from "../services/deductionVerificationService";
 import { memoryConsolidationService } from "../services/memoryConsolidationService";
+import { temporalMemoryService } from "../services/temporalMemoryService";
+import { evidenceReconciliationEngine } from "../services/evidenceReconciliationEngine";
+import { hebbianGraphEngine } from "../services/hebbianGraphEngine";
 import { prisma } from "../db/prisma";
 
 export const stockRouter = Router();
@@ -361,4 +364,60 @@ stockRouter.post("/memory/consolidate/:symbol", async (req: Request, res: Respon
   const updatedPrinciples = await memoryConsolidationService.consolidateAndDistill(portfolioId, symbol, lessons);
   return res.json({ success: true, data: updatedPrinciples });
 });
+
+// 17. Holistic Context: As-of-Time 历史时态切片查询原则库 (支持回测无未来函数审计)
+stockRouter.get("/memory/as-of/:symbol", async (req: Request, res: Response) => {
+  const { symbol } = req.params;
+  const portfolioId = (req.query.portfolioId as string) || "default-portfolio";
+  const asOfDate = req.query.asOfDate as string;
+  const principles = await temporalMemoryService.getActivePrinciplesAsOf({
+    portfolioId,
+    symbol,
+    asOfDate,
+  });
+  return res.json({ success: true, data: principles });
+});
+
+// 18. Holistic Context: 产业链赫布活图与多跳关联检索
+stockRouter.get("/knowledge-graph/:symbol/living", async (req: Request, res: Response) => {
+  const { symbol } = req.params;
+  const portfolioId = (req.query.portfolioId as string) || "default-portfolio";
+  const kg = await stockKnowledgeGraphStoreService.getKnowledgeGraph(portfolioId, symbol);
+  if (!kg) {
+    return res.status(404).json({ success: false, message: "Knowledge graph not found" });
+  }
+  const livingEdges = hebbianGraphEngine.getLivingEdges(kg.edges, 0.50);
+  const multiHop = hebbianGraphEngine.expandMultiHopNeighbors(symbol, kg.nodes, kg.edges, 2, 0.50);
+  return res.json({
+    success: true,
+    data: {
+      symbol: symbol.toUpperCase(),
+      livingEdgesCount: livingEdges.length,
+      livingEdges,
+      multiHopReachable: multiHop.reachableNodeIds,
+      aggregateAlphaBoost: multiHop.aggregateAlphaBoost,
+    },
+  });
+});
+
+// 19. Holistic Context: 多源金融情报三因子置信度计算与冲突仲裁
+stockRouter.post("/evidence/reconcile", (req: Request, res: Response) => {
+  const { bullEvidence, bearEvidence, queryDate } = req.body;
+  const bullScore = Array.isArray(bullEvidence)
+    ? evidenceReconciliationEngine.calculateEvidenceSetConfidence(bullEvidence, queryDate)
+    : 0.5;
+  const bearScore = Array.isArray(bearEvidence)
+    ? evidenceReconciliationEngine.calculateEvidenceSetConfidence(bearEvidence, queryDate)
+    : 0.5;
+  const arbitration = evidenceReconciliationEngine.arbitrateConflict(bullScore, bearScore);
+  return res.json({
+    success: true,
+    data: {
+      bullScore,
+      bearScore,
+      arbitration,
+    },
+  });
+});
+
 

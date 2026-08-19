@@ -8,6 +8,12 @@ export class MacroSnapshotStoreService {
   public async saveDailySnapshot(dto: DailyMacroSnapshotDTO): Promise<DailyMacroSnapshotDTO> {
     const dateStr = dto.snapshotDate || new Date().toISOString().split("T")[0];
 
+    const crossAssetPayload = {
+      ...dto.crossAsset,
+      benchmarks: dto.benchmarks,
+      marketDynamics: dto.marketDynamics,
+    };
+
     const record = await prisma.dailyMacroSnapshot.upsert({
       where: { snapshotDate: dateStr },
       create: {
@@ -17,7 +23,7 @@ export class MacroSnapshotStoreService {
         stanceBias: dto.stanceBias,
         positionCapPct: dto.positionCapPct,
         stopLossPct: dto.stopLossPct,
-        crossAssetJson: JSON.stringify(dto.crossAsset),
+        crossAssetJson: JSON.stringify(crossAssetPayload),
         sectorMatrixJson: JSON.stringify(dto.sectors),
         topNewsJson: JSON.stringify(dto.topNews),
         promptContext: dto.promptContext,
@@ -28,7 +34,7 @@ export class MacroSnapshotStoreService {
         stanceBias: dto.stanceBias,
         positionCapPct: dto.positionCapPct,
         stopLossPct: dto.stopLossPct,
-        crossAssetJson: JSON.stringify(dto.crossAsset),
+        crossAssetJson: JSON.stringify(crossAssetPayload),
         sectorMatrixJson: JSON.stringify(dto.sectors),
         topNewsJson: JSON.stringify(dto.topNews),
         promptContext: dto.promptContext,
@@ -72,9 +78,26 @@ export class MacroSnapshotStoreService {
     };
     let sectors: SectorSnapshotItem[] = [];
     let topNews: CredibleNewsItem[] = [];
+    let benchmarksFromPayload: any[] | undefined = undefined;
+    let marketDynamics: any = undefined;
 
     try {
-      crossAsset = JSON.parse(record.crossAssetJson || "{}");
+      const parsedCross = JSON.parse(record.crossAssetJson || "{}");
+      crossAsset = {
+        vix: Number(parsedCross.vix ?? 0),
+        vixChange: Number(parsedCross.vixChange ?? 0),
+        us10y: Number(parsedCross.us10y ?? 0),
+        dxy: Number(parsedCross.dxy ?? 0),
+        spyChange: Number(parsedCross.spyChange ?? 0),
+        qqqChange: Number(parsedCross.qqqChange ?? 0),
+        iwmChange: Number(parsedCross.iwmChange ?? 0),
+      };
+      if (Array.isArray(parsedCross.benchmarks) && parsedCross.benchmarks.length > 0) {
+        benchmarksFromPayload = parsedCross.benchmarks;
+      }
+      if (parsedCross.marketDynamics) {
+        marketDynamics = parsedCross.marketDynamics;
+      }
     } catch {}
     try {
       sectors = JSON.parse(record.sectorMatrixJson || "[]");
@@ -82,6 +105,12 @@ export class MacroSnapshotStoreService {
     try {
       topNews = JSON.parse(record.topNewsJson || "[]");
     } catch {}
+
+    const benchmarks = benchmarksFromPayload || [
+      { symbol: "SPY", name: "标普500大盘", lastPrice: 0, changeRate: crossAsset.spyChange || 0 },
+      { symbol: "QQQ", name: "纳指100科技", lastPrice: 0, changeRate: crossAsset.qqqChange || 0 },
+      { symbol: "IWM", name: "罗素2000小盘", lastPrice: 0, changeRate: crossAsset.iwmChange || 0 },
+    ];
 
     return {
       id: record.id,
@@ -94,13 +123,10 @@ export class MacroSnapshotStoreService {
       stopLossPct: record.stopLossPct,
       crossAsset,
       sectors,
-      benchmarks: [
-        { symbol: "SPY", name: "标普500大盘", lastPrice: 0, changeRate: crossAsset.spyChange || 0 },
-        { symbol: "QQQ", name: "纳指100科技", lastPrice: 0, changeRate: crossAsset.qqqChange || 0 },
-        { symbol: "IWM", name: "罗素2000小盘", lastPrice: 0, changeRate: crossAsset.iwmChange || 0 },
-      ],
+      benchmarks,
       topNews,
       promptContext: record.promptContext,
+      marketDynamics,
     };
   }
 }

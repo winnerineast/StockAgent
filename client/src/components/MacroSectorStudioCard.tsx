@@ -336,18 +336,34 @@ export const MacroSectorStudioCard: React.FC<MacroSectorStudioCardProps> = ({
             {/* 跨资产指标 3 联条 */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between p-2 rounded-lg bg-slate-900/90 border border-slate-800/80 text-xs">
-                <span className="text-slate-400">恐慌指数 (VIX)</span>
-                <span className="font-mono font-bold text-emerald-400 flex items-center gap-1">
+                <span className="text-slate-400">恐慌指数 (VIX/UVXY)</span>
+                <span className={`font-mono font-bold flex items-center gap-1 ${
+                  displayedSnapshot.crossAsset.vix > 25
+                    ? "text-rose-400"
+                    : displayedSnapshot.crossAsset.vix > 20
+                    ? "text-amber-400"
+                    : "text-emerald-400"
+                }`}>
                   <span>{displayedSnapshot.crossAsset.vix.toFixed(1)}</span>
-                  <span className="text-[10px] text-slate-500 font-normal">(平稳)</span>
+                  <span className="text-[10px] text-slate-500 font-normal">
+                    {displayedSnapshot.crossAsset.vixChange !== 0 ? `(${displayedSnapshot.crossAsset.vixChange > 0 ? "+" : ""}${displayedSnapshot.crossAsset.vixChange}%)` : (displayedSnapshot.crossAsset.vix > 25 ? "(极度恐慌)" : displayedSnapshot.crossAsset.vix > 20 ? "(预警)" : "(平稳)")}
+                  </span>
                 </span>
               </div>
 
               <div className="flex items-center justify-between p-2 rounded-lg bg-slate-900/90 border border-slate-800/80 text-xs">
-                <span className="text-slate-400">美债10Y收益率</span>
+                <span className="text-slate-400">
+                  {displayedSnapshot.crossAsset.us10y > 10 ? "20年+美债 (TLT)" : "美债10Y收益率"}
+                </span>
                 <span className="font-mono font-bold text-amber-300 flex items-center gap-1">
-                  <span>{displayedSnapshot.crossAsset.us10y.toFixed(2)}%</span>
-                  <span className="text-[10px] text-amber-500/80 font-normal">(高位震荡)</span>
+                  <span>
+                    {displayedSnapshot.crossAsset.us10y > 10
+                      ? `$${displayedSnapshot.crossAsset.us10y.toFixed(2)}`
+                      : `${displayedSnapshot.crossAsset.us10y.toFixed(2)}%`}
+                  </span>
+                  <span className="text-[10px] text-amber-500/80 font-normal">
+                    {displayedSnapshot.crossAsset.us10y > 10 ? "(债券基准)" : "(收益率)"}
+                  </span>
                 </span>
               </div>
 
@@ -516,7 +532,9 @@ export const MacroSectorStudioCard: React.FC<MacroSectorStudioCardProps> = ({
             <div>
               <h4 className="text-sm font-bold text-white flex items-center gap-2">
                 <span>11 大行业板块相对强度与资金流向完整矩阵</span>
-                <span className="text-xs text-slate-400 font-normal font-mono">(基准: SPY 0.7%)</span>
+                <span className="text-xs text-slate-400 font-normal font-mono">
+                  (基准: SPY {displayedSnapshot.crossAsset.spyChange > 0 ? "+" : ""}{displayedSnapshot.crossAsset.spyChange}%)
+                </span>
               </h4>
               <p className="text-xs text-slate-400 mt-0.5">
                 直连 OpenD 获取行业主力资金流入、换手率与 RRG 轮动象限 (领先/改善/弱化/滞后)
